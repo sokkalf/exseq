@@ -1,4 +1,4 @@
-defmodule Exseq do
+defmodule ExSeq do
   @moduledoc """
   Documentation for `Exseq`.
   """
