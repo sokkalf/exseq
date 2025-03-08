@@ -78,9 +78,17 @@ defmodule ExSeq do
       |> Keyword.delete(:gl)
       |> Keyword.delete(:domain)
 
+    {message, exception} = case String.split(message, "\n", parts: 2) do
+      [message, exception] ->
+        {message, exception}
+      [message] ->
+        {message, nil}
+    end
+
     %ExSeq.CLEFEvent{
       timestamp: ts,
       message: message,
+      exception: exception,
       level: CLEFLevel.elixir_to_clef_level(level),
       properties: metadata
     }
