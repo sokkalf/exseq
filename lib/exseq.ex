@@ -1,13 +1,16 @@
 defmodule ExSeq do
   @behaviour :gen_event
 
+  alias ExSeq.CLEFLevel
+
   def start_link(_args) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
   @impl true
   def init(_args) do
-    GenServer.start_link(ExSeq.Flusher, nil, name: ExSeq.Flusher)
+    config = Application.get_env(:logger, __MODULE__, [])
+    GenServer.start_link(ExSeq.Flusher, config, name: ExSeq.Flusher)
   end
 
   @impl true
@@ -22,7 +25,7 @@ defmodule ExSeq do
     clef_event = %ExSeq.CLEFEvent{
       timestamp: ts,
       message: message,
-      level: level,
+      level: CLEFLevel.elixir_to_clef_level(level),
       properties: metadata
     }
     GenServer.cast(state, {:receive, clef_event})

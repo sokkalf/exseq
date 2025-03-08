@@ -34,6 +34,7 @@ defmodule Exseq.MixProject do
   defp deps do
     [
       {:jason, "~> 1.4"},
+      {:httpoison, "~> 2.2"}
     ]
   end
 end
