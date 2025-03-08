@@ -20,8 +20,19 @@ defmodule ExSeq do
   end
 
   def handle_event({level, _group_leader, {Logger, message, timestamp, metadata}}, state) do
-    {{year, month, day}, {hour, minute, second, millisecond}} = timestamp
-    ts = NaiveDateTime.new!(year, month, day, hour, minute, second, millisecond*1000)
+    ts = case Keyword.get(metadata, :time) do
+      nil ->
+        {{year, month, day}, {hour, minute, second, millisecond}} = timestamp
+        NaiveDateTime.new!(year, month, day, hour, minute, second, millisecond*1000)
+      t ->
+        DateTime.from_unix!(t, :microsecond)
+    end
+    metadata =
+      Keyword.delete(metadata, :time)
+      |> Keyword.delete(:erl_level)
+      |> Keyword.delete(:gl)
+      |> Keyword.delete(:domain)
+
     clef_event = %ExSeq.CLEFEvent{
       timestamp: ts,
       message: message,
