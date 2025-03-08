@@ -49,3 +49,35 @@ defmodule ExSeq.CLEFEvent do
           properties: map()
         }
 end
+
+defimpl Jason.Encoder, for: ExSeq.CLEFEvent do
+  alias ExSeq.CLEFLevel
+
+  def encode(%ExSeq.CLEFEvent{} = event, opts) do
+    # Transform the struct into a map with the CLEF fields:
+    clef_map = %{
+      "@t" => event.timestamp,
+      "@m" => event.message,
+      "@x" => event.exception,
+      "@l" => CLEFLevel.to_string(event.level),
+      "@tr" => event.trace_id,
+      "@sp" => event.span_id,
+      "@st" => event.span_start,
+      "@sk" => event.span_kind,
+      "@ra" => event.resource_attributes,
+      "@ps" => event.parent_span_id
+    }
+
+    # Add user-defined properties into the top-level map:
+    merged = Map.merge(clef_map, event.properties || %{})
+
+    cleaned =
+      merged
+      |> Enum.reject(fn {_key, value} ->
+        is_nil(value) or value == ""
+      end)
+      |> Enum.into(%{})
+
+    Jason.Encode.map(cleaned, opts)
+  end
+end
