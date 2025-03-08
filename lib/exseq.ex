@@ -17,14 +17,16 @@ defmodule ExSeq do
   end
 
   def handle_event({level, _group_leader, {Logger, message, timestamp, metadata}}, state) do
+    {{year, month, day}, {hour, minute, second, millisecond}} = timestamp
+    ts = NaiveDateTime.new!(year, month, day, hour, minute, second, millisecond*1000)
     clef_event = %ExSeq.CLEFEvent{
-      timestamp: timestamp,
+      timestamp: ts,
       message: message,
       level: level,
       properties: metadata
     }
 
-    IO.inspect(clef_event)
+    IO.inspect(Jason.encode!(clef_event))
 
     {:ok, state}
   end
