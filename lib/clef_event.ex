@@ -69,7 +69,8 @@ defimpl Jason.Encoder, for: ExSeq.CLEFEvent do
     }
 
     # Add user-defined properties into the top-level map:
-    merged = Map.merge(clef_map, event.properties || %{})
+    props = event.properties |> Enum.into(%{})
+    merged = Map.merge(clef_map, props || %{})
 
     cleaned =
       merged
