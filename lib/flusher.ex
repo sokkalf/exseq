@@ -36,6 +36,11 @@ defmodule ExSeq.Flusher do
   @impl true
   def handle_info(:tick, state) do
     state = flush(state)
+    state = if length(state.retry_buffer) > 0 and length(state.messages) == 0 do
+      %{state | messages: state.retry_buffer, retry_buffer: []}
+    else
+      state
+    end
     tick(state.flush_interval)
     {:noreply, state}
   end
