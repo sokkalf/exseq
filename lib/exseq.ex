@@ -3,6 +3,11 @@ defmodule ExSeq do
 
   alias ExSeq.CLEFLevel
 
+  defstruct [
+    :flusher,
+    :level
+  ]
+
   def start_link(_args) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
@@ -10,7 +15,9 @@ defmodule ExSeq do
   @impl true
   def init(_args) do
     config = Application.get_env(:logger, __MODULE__, [])
-    GenServer.start_link(ExSeq.Flusher, config, name: ExSeq.Flusher)
+    level = Keyword.get(config, :level, :info)
+    {:ok, flusher} = GenServer.start_link(ExSeq.Flusher, config, name: ExSeq.Flusher)
+    {:ok, %__MODULE__{flusher: flusher, level: level}}
   end
 
   @impl true
@@ -20,31 +27,23 @@ defmodule ExSeq do
   end
 
   def handle_event({level, _group_leader, {Logger, message, timestamp, metadata}}, state) do
-    ts = case Keyword.get(metadata, :time) do
-      nil ->
-        {{year, month, day}, {hour, minute, second, millisecond}} = timestamp
-        NaiveDateTime.new!(year, month, day, hour, minute, second, millisecond*1000)
-      t ->
-        DateTime.from_unix!(t, :microsecond)
-    end
-    metadata =
-      Keyword.delete(metadata, :time)
-      |> Keyword.delete(:erl_level)
-      |> Keyword.delete(:gl)
-      |> Keyword.delete(:domain)
-
-    clef_event = %ExSeq.CLEFEvent{
-      timestamp: ts,
-      message: message,
-      level: CLEFLevel.elixir_to_clef_level(level),
-      properties: metadata
+    level_order = %{
+      debug: 0,
+      info: 1,
+      warn: 2,
+      error: 3
     }
-    GenServer.cast(state, {:receive, clef_event})
+
+    if level_order[level] >= level_order[state.level] do
+      create_event(level, message, timestamp, metadata)
+      |> send_event()
+    end
+
     {:ok, state}
   end
 
   def handle_event(:flush, state) do
-    IO.puts "Flush event"
+    IO.puts("Flush event")
     {:ok, state}
   end
 
@@ -60,5 +59,34 @@ defmodule ExSeq do
   @impl true
   def handle_call({:configure, _options}, state) do
     {:ok, :ok, state}
+  end
+
+  defp create_event(level, message, timestamp, metadata) do
+    ts =
+      case Keyword.get(metadata, :time) do
+        nil ->
+          {{year, month, day}, {hour, minute, second, millisecond}} = timestamp
+          NaiveDateTime.new!(year, month, day, hour, minute, second, millisecond * 1000)
+
+        t ->
+          DateTime.from_unix!(t, :microsecond)
+      end
+
+    metadata =
+      Keyword.delete(metadata, :time)
+      |> Keyword.delete(:erl_level)
+      |> Keyword.delete(:gl)
+      |> Keyword.delete(:domain)
+
+    %ExSeq.CLEFEvent{
+      timestamp: ts,
+      message: message,
+      level: CLEFLevel.elixir_to_clef_level(level),
+      properties: metadata
+    }
+  end
+
+  defp send_event(clef_event) do
+    GenServer.cast(ExSeq.Flusher, {:receive, clef_event})
   end
 end
