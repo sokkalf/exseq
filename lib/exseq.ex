@@ -1,14 +1,16 @@
 defmodule ExSeq do
-  use GenServer
+  @behaviour :gen_event
 
   def start_link(_args) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
+  @impl true
   def init(_args) do
     {:ok, nil}
   end
 
+  @impl true
   def handle_event({_level, gl, {Logger, _, _, _}}, state)
       when node(gl) != node() do
     {:ok, state}
@@ -32,8 +34,17 @@ defmodule ExSeq do
     {:ok, state}
   end
 
-  def handle_info(msg, state) do
-    IO.inspect(msg)
+  def handle_event(_, state) do
     {:ok, state}
+  end
+
+  @impl true
+  def handle_info(_, state) do
+    {:ok, state}
+  end
+
+  @impl true
+  def handle_call({:configure, _options}, state) do
+    {:ok, :ok, state}
   end
 end
