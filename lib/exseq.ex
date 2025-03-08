@@ -7,7 +7,7 @@ defmodule ExSeq do
 
   @impl true
   def init(_args) do
-    {:ok, nil}
+    GenServer.start_link(ExSeq.Flusher, nil, name: ExSeq.Flusher)
   end
 
   @impl true
@@ -25,9 +25,7 @@ defmodule ExSeq do
       level: level,
       properties: metadata
     }
-
-    IO.inspect(Jason.encode!(clef_event))
-
+    GenServer.cast(state, {:receive, clef_event})
     {:ok, state}
   end
 
