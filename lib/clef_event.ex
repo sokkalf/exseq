@@ -82,3 +82,9 @@ defimpl Jason.Encoder, for: ExSeq.CLEFEvent do
     Jason.Encode.map(cleaned, opts)
   end
 end
+
+defimpl Jason.Encoder, for: PID do
+  def encode(pid, _opts) do
+    pid |> inspect() |> Jason.encode!()
+  end
+end
