@@ -61,6 +61,16 @@ defmodule ExSeq do
     {:ok, :ok, state}
   end
 
+  defp message_parts(message) do
+    message = IO.iodata_to_binary(message)
+    case String.split(message, "\n", parts: 2) do
+      [message, exception] ->
+        {message, exception}
+      [message] ->
+        {message, nil}
+    end
+  end
+
   defp create_event(level, message, timestamp, metadata) do
     ts =
       case Keyword.get(metadata, :time) do
@@ -78,12 +88,7 @@ defmodule ExSeq do
       |> Keyword.delete(:gl)
       |> Keyword.delete(:domain)
 
-    {message, exception} = case String.split(message, "\n", parts: 2) do
-      [message, exception] ->
-        {message, exception}
-      [message] ->
-        {message, nil}
-    end
+    {message, exception} = message_parts(message)
 
     %ExSeq.CLEFEvent{
       timestamp: ts,
