@@ -8,13 +8,13 @@ defmodule ExSeq.Flusher do
             batch_size: 50,
             retry_buffer: [],
             url: "http://localhost:5341/ingest/clef",
-            api_key: "secret"
+            api_key: ""
 
   @impl true
   def init(args) do
     url = Keyword.get(args, :url, "http://localhost:5341/ingeest/clef")
-    api_key = Keyword.get(args, :api_key, "secret")
     state = %__MODULE__{url: url, api_key: api_key}
+    api_key = Keyword.get(args, :api_key, "")
     tick(state.flush_interval)
     {:ok, state}
   end
