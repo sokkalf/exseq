@@ -83,14 +83,11 @@ defimpl Jason.Encoder, for: ExSeq.CLEFEvent do
   end
 end
 
-defimpl Jason.Encoder, for: PID do
-  def encode(pid, _opts) do
-    pid |> inspect() |> Jason.encode!()
-  end
-end
-
-defimpl Jason.Encoder, for: Tuple do
-  def encode(tuple, _opts) do
-    tuple |> inspect() |> Jason.encode!()
+# Fallback
+defimpl Jason.Encoder, for: Any do
+  def encode(value, _opts) do
+    value
+    |> inspect()
+    |> Jason.encode!()
   end
 end
