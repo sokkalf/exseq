@@ -4,7 +4,7 @@ defmodule Exseq.MixProject do
   def project do
     [
       app: :exseq,
-      version: "0.1.0",
+      version: "0.1.1",
       elixir: "~> 1.17",
       package: package(),
       source_url: "https://github.com/sokkalf/exseq",
