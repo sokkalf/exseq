@@ -46,6 +46,13 @@ config :logger, ExSeq,
 - **`seq_url`** is the endpoint of your Seq server.
 - **`api_key`** is your Seq API key if required for authentication (optional if Seq isn’t secured).
 
+You can also tune the flush interval and batch size:
+
+```elixir
+  flush_interval: 5,  # Flush every 5 seconds
+  batch_size: 100
+```
+
 ## How It Works
 
 1. **`ExSeq`** implements the `:gen_event` behavior, which the Elixir `Logger` uses for backends.
