@@ -24,7 +24,7 @@ defmodule ExSeq.FlusherTest do
     {body |> String.split("\n") |> Enum.map(&Jason.decode!/1), conn}
   end
 
-  test "sends a batch once batch_size events are buffered", %{bypass: bypass, url: url} do
+  test "sends a batch, in order, once batch_size events are buffered", %{bypass: bypass, url: url} do
     test = self()
 
     Bypass.expect_once(bypass, "POST", "/ingest/clef", fn conn ->
@@ -39,8 +39,7 @@ defmodule ExSeq.FlusherTest do
     refute_receive {:events, _}, 100
     GenServer.cast(flusher, {:receive, event("two")})
 
-    assert_receive {:events, messages}
-    assert Enum.sort(messages) == ["one", "two"]
+    assert_receive {:events, ["one", "two"]}
     :sys.get_state(flusher)
   end
 

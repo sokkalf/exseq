@@ -31,6 +31,7 @@ defmodule ExSeq.Flusher do
 
   @impl true
   def handle_cast({:receive, %CLEFEvent{} = msg}, state) do
+    # Newest first; reversed when sending.
     state = %{state | messages: [msg | state.messages]}
 
     state =
@@ -98,7 +99,7 @@ defmodule ExSeq.Flusher do
 
     case HTTPoison.post(
            state.url,
-           messages_as_string_with_newline(state.messages),
+           messages_as_string_with_newline(Enum.reverse(state.messages)),
            headers
          ) do
       {:ok, %HTTPoison.Response{status_code: status}} when status in 200..299 ->
