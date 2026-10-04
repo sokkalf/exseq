@@ -76,10 +76,10 @@ defmodule ExSeq.Flusher do
            messages_as_string_with_newline(state.messages),
            headers
          ) do
-      {:ok, _} ->
+      {:ok, %HTTPoison.Response{status_code: status}} when status in 200..299 ->
         %{state | messages: []}
 
-      {:error, %HTTPoison.Error{reason: _reason}} ->
+      _error ->
         %{state | retry_buffer: state.messages, messages: []}
     end
   end

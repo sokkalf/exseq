@@ -44,6 +44,15 @@ defmodule ExSeq.FlusherTest do
     :sys.get_state(flusher)
   end
 
+  test "keeps a batch for retry when Seq responds with an error", %{bypass: bypass, url: url} do
+    Bypass.expect_once(bypass, "POST", "/ingest/clef", &Plug.Conn.resp(&1, 401, ""))
+
+    flusher = start_flusher(seq_url: url, batch_size: 1)
+    GenServer.cast(flusher, {:receive, event("one")})
+
+    assert %{messages: [], retry_buffer: [%CLEFEvent{message: "one"}]} = :sys.get_state(flusher)
+  end
+
   describe "config" do
     test "reads the documented keys" do
       flusher = start_flusher(seq_url: "http://seq/ingest/clef", flush_interval: 2)
