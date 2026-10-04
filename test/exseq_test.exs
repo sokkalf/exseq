@@ -95,22 +95,23 @@ defmodule ExSeqTest do
       {:ok, bypass: bypass, id: id, url: "http://localhost:#{bypass.port}/ingest/clef"}
     end
 
+    # Only passes on events logged with `handler: id` metadata, so events from
+    # other tests don't end up in the Flusher.
     defp add_handler(id, config) do
-      :logger.add_handler(id, ExSeq, %{config: Map.merge(%{flush_interval: 3600}, config)})
+      filter = {fn event, id -> if event.meta[:handler] == id, do: event, else: :stop end, id}
+
+      :logger.add_handler(id, ExSeq, %{
+        config: Map.merge(%{flush_interval: 3600}, config),
+        filters: [this_test: filter]
+      })
     end
 
     test "sends logged events to Seq", %{bypass: bypass, id: id, url: url} do
       test = self()
-      marker = "#{id}"
 
-      Bypass.expect(bypass, "POST", "/ingest/clef", fn conn ->
+      Bypass.expect_once(bypass, "POST", "/ingest/clef", fn conn ->
         {:ok, body, conn} = Plug.Conn.read_body(conn)
-
-        for line <- String.split(body, "\n"),
-            event = Jason.decode!(line),
-            event["marker"] == marker,
-            do: send(test, {:event, event})
-
+        send(test, {:event, Jason.decode!(body)})
         Plug.Conn.resp(conn, 201, "")
       end)
 
@@ -118,11 +119,37 @@ defmodule ExSeqTest do
 
       ExUnit.CaptureLog.capture_log(fn ->
         require Logger
-        Logger.warning("hello", marker: marker, user_id: 123)
+        Logger.warning("hello", handler: id, user_id: 123)
         Logger.flush()
       end)
 
       assert_received {:event, %{"@m" => "hello", "@l" => "Warning", "user_id" => 123}}
+    end
+
+    test "ignores events logged by ExSeq's own processes", %{bypass: bypass, id: id, url: url} do
+      test = self()
+
+      Bypass.expect_once(bypass, "POST", "/ingest/clef", fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+        send(test, {:messages, body |> String.split("\n") |> Enum.map(&Jason.decode!(&1)["@m"])})
+        Plug.Conn.resp(conn, 201, "")
+      end)
+
+      assert :ok = add_handler(id, %{seq_url: url})
+      require Logger
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        Task.async(fn ->
+          ExSeq.mark_internal()
+          Logger.warning("from ExSeq", handler: id)
+        end)
+        |> Task.await()
+
+        Logger.warning("from elsewhere", handler: id)
+        Logger.flush()
+      end)
+
+      assert_received {:messages, ["from elsewhere"]}
     end
 
     test "rejects unknown options", %{id: id} do

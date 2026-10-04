@@ -3,6 +3,8 @@ defmodule ExSeq do
 
   @options [:seq_url, :api_key, :flush_interval, :batch_size, :max_buffer_size, :http_timeout]
 
+  @internal {__MODULE__, :internal}
+
   # Metadata that's either used for the CLEF fields or of no use in Seq.
   @internal_metadata [:time, :gl, :domain, :crash_reason, :report_cb, :mfa, :error_logger]
 
@@ -41,8 +43,9 @@ defmodule ExSeq do
 
   @doc false
   def log(%{meta: meta} = event, %{id: id}) do
-    # Events from other nodes are logged there.
-    if node(Map.get(meta, :gl, self())) == node() do
+    # Events from other nodes are logged there. Events from ExSeq's own
+    # processes would feed back into the Flusher.
+    if node(Map.get(meta, :gl, self())) == node() and not Process.get(@internal, false) do
       GenServer.cast(flusher(id), {:receive, create_event(event)})
     end
   rescue
@@ -57,6 +60,10 @@ defmodule ExSeq do
   catch
     :exit, _ -> :ok
   end
+
+  # Marks the calling process as one whose log events aren't sent to Seq.
+  @doc false
+  def mark_internal, do: Process.put(@internal, true)
 
   defp flusher(id), do: {:via, Registry, {ExSeq.Registry, id}}
 

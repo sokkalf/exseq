@@ -2,6 +2,8 @@ defmodule ExSeq.Flusher do
   # Leave time to send what's buffered on shutdown.
   use GenServer, shutdown: 10_000
 
+  require Logger
+
   alias ExSeq.CLEFEvent
 
   defstruct buffer: :queue.new(),
@@ -9,6 +11,7 @@ defmodule ExSeq.Flusher do
             in_flight: nil,
             retrying: false,
             draining: false,
+            overflowing: false,
             flush_interval: :timer.seconds(5),
             batch_size: 50,
             max_buffer_size: 10_000,
@@ -23,6 +26,7 @@ defmodule ExSeq.Flusher do
 
   @impl true
   def init(options) do
+    ExSeq.mark_internal()
     state = configure(%__MODULE__{}, options)
     Process.flag(:trap_exit, true)
     tick(state.flush_interval)
@@ -61,8 +65,12 @@ defmodule ExSeq.Flusher do
     {:noreply, maybe_flush(state)}
   end
 
-  def handle_info({:DOWN, ref, :process, _, _}, %{in_flight: {%Task{ref: ref}, batch}} = state) do
-    {:noreply, handle_result(%{state | in_flight: nil}, batch, :retry)}
+  def handle_info(
+        {:DOWN, ref, :process, _, reason},
+        %{in_flight: {%Task{ref: ref}, batch}} = state
+      ) do
+    result = {:retry, "request crashed: #{inspect(reason)}"}
+    {:noreply, handle_result(%{state | in_flight: nil}, batch, result)}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -90,7 +98,13 @@ defmodule ExSeq.Flusher do
   end
 
   defp drop_oldest(%{count: count, max_buffer_size: max} = state) when count > max do
-    drop_oldest(%{state | buffer: :queue.drop(state.buffer), count: count - 1})
+    if not state.overflowing do
+      Logger.warning(
+        "The Seq buffer is full (#{max} events). Dropping the oldest events until Seq can be reached."
+      )
+    end
+
+    drop_oldest(%{state | buffer: :queue.drop(state.buffer), count: count - 1, overflowing: true})
   end
 
   defp drop_oldest(state), do: state
@@ -104,7 +118,13 @@ defmodule ExSeq.Flusher do
     if state.draining or (count >= state.batch_size and not state.retrying) do
       {batch, state} = take_batch(state)
       config = Map.take(state, [:url, :api_key, :http_timeout])
-      task = Task.Supervisor.async_nolink(ExSeq.TaskSupervisor, fn -> post(batch, config) end)
+
+      task =
+        Task.Supervisor.async_nolink(ExSeq.TaskSupervisor, fn ->
+          ExSeq.mark_internal()
+          post(batch, config)
+        end)
+
       %{state | in_flight: {task, batch}}
     else
       state
@@ -125,7 +145,7 @@ defmodule ExSeq.Flusher do
     result =
       case Task.yield(task, state.http_timeout * 2) || Task.shutdown(task, :brutal_kill) do
         {:ok, result} -> result
-        _ -> :retry
+        _ -> {:retry, "timed out"}
       end
 
     handle_result(%{state | in_flight: nil}, batch, result)
@@ -137,7 +157,7 @@ defmodule ExSeq.Flusher do
     {batch, state} = take_batch(state)
     result = post(batch, state)
     state = handle_result(state, batch, result)
-    if result == :retry, do: state, else: flush_sync(state)
+    if match?({:retry, _}, result), do: state, else: flush_sync(state)
   end
 
   defp take_batch(state) do
@@ -148,13 +168,22 @@ defmodule ExSeq.Flusher do
 
   # A failed batch goes back to the front of the buffer, to be retried on the
   # next tick.
-  defp handle_result(state, batch, :retry) do
+  defp handle_result(state, batch, {:retry, reason}) do
+    if not state.retrying do
+      Logger.warning("Couldn't send #{:queue.len(batch)} events to Seq (#{reason}). Will retry.")
+    end
+
     buffer = :queue.join(batch, state.buffer)
     count = state.count + :queue.len(batch)
     drop_oldest(%{state | buffer: buffer, count: count, retrying: true, draining: false})
   end
 
-  defp handle_result(state, _batch, _sent_or_dropped), do: %{state | retrying: false}
+  defp handle_result(state, batch, {:drop, status}) do
+    Logger.warning("Seq rejected #{:queue.len(batch)} events with HTTP #{status}. Dropping them.")
+    %{state | retrying: false}
+  end
+
+  defp handle_result(state, _batch, :ok), do: %{state | retrying: false, overflowing: false}
 
   defp post(batch, config) do
     case HTTPoison.post(
@@ -169,11 +198,17 @@ defmodule ExSeq.Flusher do
 
       # Seq rejected the payload itself, so retrying won't help.
       {:ok, %HTTPoison.Response{status_code: status}} when status in [400, 413] ->
-        :drop
+        {:drop, status}
 
-      _error ->
-        :retry
+      {:ok, %HTTPoison.Response{status_code: status}} ->
+        {:retry, "HTTP #{status}"}
+
+      {:error, %HTTPoison.Error{reason: reason}} ->
+        {:retry, inspect(reason)}
     end
+  rescue
+    # Also runs in the Flusher itself when flushing synchronously.
+    exception -> {:retry, Exception.message(exception)}
   end
 
   defp messages_as_string_with_newline(messages) do

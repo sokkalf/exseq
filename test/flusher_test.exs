@@ -1,7 +1,11 @@
 defmodule ExSeq.FlusherTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   alias ExSeq.CLEFEvent
+
+  @moduletag :capture_log
 
   setup do
     bypass = Bypass.open()
@@ -68,8 +72,14 @@ defmodule ExSeq.FlusherTest do
     respond_with(bypass, [401, 503, 201, 201])
     flusher = start_flusher(seq_url: url, batch_size: 1)
 
-    GenServer.cast(flusher, {:receive, event("one")})
-    assert_receive {:events, ["one"]}
+    log =
+      capture_log(fn ->
+        GenServer.cast(flusher, {:receive, event("one")})
+        assert_receive {:events, ["one"]}
+        await_idle(flusher)
+      end)
+
+    assert log =~ "Couldn't send 1 events to Seq (HTTP 401). Will retry."
 
     # No new attempt until the next tick.
     GenServer.cast(flusher, {:receive, event("two")})
@@ -94,13 +104,20 @@ defmodule ExSeq.FlusherTest do
 
     GenServer.cast(flusher, {:receive, event("one")})
     assert_receive {:events, ["one"]}
-    GenServer.cast(flusher, {:receive, event("two")})
-    GenServer.cast(flusher, {:receive, event("three")})
 
-    await_idle(flusher)
+    log =
+      capture_log(fn ->
+        GenServer.cast(flusher, {:receive, event("two")})
+        GenServer.cast(flusher, {:receive, event("three")})
+        GenServer.cast(flusher, {:receive, event("four")})
+        await_idle(flusher)
+      end)
+
+    assert log =~ "The Seq buffer is full (2 events)"
+
     send(flusher, :tick)
-    assert_receive {:events, ["two"]}
     assert_receive {:events, ["three"]}
+    assert_receive {:events, ["four"]}
     await_idle(flusher)
   end
 
@@ -108,9 +125,14 @@ defmodule ExSeq.FlusherTest do
     respond_with(bypass, [400])
     flusher = start_flusher(seq_url: url, batch_size: 1)
 
-    GenServer.cast(flusher, {:receive, event("one")})
-    assert_receive {:events, ["one"]}
-    await_idle(flusher)
+    log =
+      capture_log(fn ->
+        GenServer.cast(flusher, {:receive, event("one")})
+        assert_receive {:events, ["one"]}
+        await_idle(flusher)
+      end)
+
+    assert log =~ "Seq rejected 1 events with HTTP 400. Dropping them."
     assert %{count: 0, retrying: false} = :sys.get_state(flusher)
   end
 
