@@ -11,12 +11,12 @@
 
 ## Installation
 
-Add `ex_seq` to your list of dependencies in `mix.exs`:
+Add `exseq` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:ex_seq, "~> 0.1.0"}
+    {:exseq, "~> 0.1.2"}
   ]
 end
 ```
