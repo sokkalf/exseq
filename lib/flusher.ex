@@ -22,23 +22,8 @@ defmodule ExSeq.Flusher do
   end
 
   @impl true
-  def init(args) do
-    url = Keyword.get(args, :seq_url, "http://localhost:5341/ingest/clef")
-    api_key = Keyword.get(args, :api_key)
-    flush_interval = :timer.seconds(Keyword.get(args, :flush_interval, 5))
-    batch_size = Keyword.get(args, :batch_size, 50)
-    max_buffer_size = Keyword.get(args, :max_buffer_size, 10_000)
-    http_timeout = Keyword.get(args, :http_timeout, :timer.seconds(5))
-
-    state = %__MODULE__{
-      url: url,
-      api_key: api_key,
-      flush_interval: flush_interval,
-      batch_size: batch_size,
-      max_buffer_size: max(max_buffer_size, batch_size),
-      http_timeout: http_timeout
-    }
-
+  def init(options) do
+    state = configure(%__MODULE__{}, options)
     Process.flag(:trap_exit, true)
     tick(state.flush_interval)
     {:ok, state}
@@ -47,6 +32,10 @@ defmodule ExSeq.Flusher do
   @impl true
   def handle_call(:flush, _from, state) do
     {:reply, :ok, flush_all(state)}
+  end
+
+  def handle_call({:configure, options}, _from, state) do
+    {:reply, :ok, configure(state, options)}
   end
 
   @impl true
@@ -81,6 +70,23 @@ defmodule ExSeq.Flusher do
   @impl true
   def terminate(_reason, state) do
     flush_all(state)
+  end
+
+  # Options that aren't given get their defaults.
+  defp configure(state, options) do
+    defaults = %__MODULE__{}
+    batch_size = Keyword.get(options, :batch_size, defaults.batch_size)
+    max_buffer_size = Keyword.get(options, :max_buffer_size, defaults.max_buffer_size)
+
+    drop_oldest(%{
+      state
+      | url: Keyword.get(options, :seq_url, defaults.url),
+        api_key: Keyword.get(options, :api_key, defaults.api_key),
+        flush_interval: :timer.seconds(Keyword.get(options, :flush_interval, 5)),
+        batch_size: batch_size,
+        max_buffer_size: max(max_buffer_size, batch_size),
+        http_timeout: Keyword.get(options, :http_timeout, defaults.http_timeout)
+    })
   end
 
   defp drop_oldest(%{count: count, max_buffer_size: max} = state) when count > max do

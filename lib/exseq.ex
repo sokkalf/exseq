@@ -17,6 +17,19 @@ defmodule ExSeq do
   end
 
   @doc false
+  def changing_config(set_or_update, %{config: old_options}, %{id: id} = new_config) do
+    options = Map.get(new_config, :config, %{})
+
+    with {:ok, options} <- validate_options(options) do
+      options = if set_or_update == :update, do: Map.merge(old_options, options), else: options
+      GenServer.call(flusher(id), {:configure, Map.to_list(options)})
+      {:ok, Map.put(new_config, :config, options)}
+    end
+  catch
+    :exit, reason -> {:error, {:flusher_not_configured, reason}}
+  end
+
+  @doc false
   def removing_handler(%{id: id}) do
     case Registry.lookup(ExSeq.Registry, id) do
       [{pid, _}] -> DynamicSupervisor.terminate_child(ExSeq.FlusherSupervisor, pid)

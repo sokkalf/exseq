@@ -130,6 +130,25 @@ defmodule ExSeqTest do
                add_handler(id, %{url: "http://seq"})
     end
 
+    test "passes config changes on to the Flusher", %{id: id, url: url} do
+      assert :ok = add_handler(id, %{seq_url: url, batch_size: 10})
+      [{flusher, _}] = Registry.lookup(ExSeq.Registry, id)
+
+      assert :ok = :logger.update_handler_config(id, :config, %{batch_size: 20})
+      assert %{url: ^url, batch_size: 20} = :sys.get_state(flusher)
+      assert {:ok, %{config: %{seq_url: ^url, batch_size: 20}}} = :logger.get_handler_config(id)
+
+      # Setting the config replaces it, so the URL goes back to the default.
+      assert :ok = :logger.set_handler_config(id, :config, %{batch_size: 30})
+      assert %{url: "http://localhost:5341/ingest/clef", batch_size: 30} = :sys.get_state(flusher)
+
+      assert :ok = :logger.set_handler_config(id, :level, :debug)
+      assert %{batch_size: 30} = :sys.get_state(flusher)
+
+      assert {:error, {:invalid_options, [:url]}} =
+               :logger.update_handler_config(id, :config, %{url: "http://seq"})
+    end
+
     test "can be removed and added again", %{id: id, url: url} do
       assert :ok = add_handler(id, %{seq_url: url})
       [{flusher, _}] = Registry.lookup(ExSeq.Registry, id)
