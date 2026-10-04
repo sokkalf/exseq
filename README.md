@@ -42,16 +42,15 @@ config :logger, ExSeq,
   api_key: "YOUR_SEQ_API_KEY"
 ```
 
-- **`level`** sets the minimum level for sending to Seq. Levels below this are ignored.
-- **`seq_url`** is the endpoint of your Seq server.
-- **`api_key`** is your Seq API key if required for authentication (optional if Seq isn’t secured).
-
-You can also tune the flush interval and batch size:
-
-```elixir
-  flush_interval: 5,  # Flush every 5 seconds
-  batch_size: 100
-```
+| Option            | Default                              | Description                                                                 |
+| ----------------- | ------------------------------------ | --------------------------------------------------------------------------- |
+| `level`           | `:info`                              | Minimum level to send to Seq. Lower levels are ignored.                     |
+| `seq_url`         | `"http://localhost:5341/ingest/clef"` | The CLEF ingestion endpoint of your Seq server.                            |
+| `api_key`         | none                                 | Your Seq API key, if Seq requires one.                                      |
+| `flush_interval`  | `5`                                  | Seconds between flushes. Buffered events are sent at least this often.     |
+| `batch_size`      | `50`                                 | Events are sent as soon as this many are buffered.                          |
+| `max_buffer_size` | `10000`                              | Events kept while Seq is unreachable. The oldest are dropped beyond this.  |
+| `http_timeout`    | `5000`                               | Connect and receive timeout for requests to Seq, in milliseconds.          |
 
 ## How It Works
 
