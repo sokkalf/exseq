@@ -11,7 +11,6 @@ defmodule ExSeq.CLEFLevel do
           | :Error
           | :Fatal
 
-
   @spec to_string(t) :: String.t()
   def to_string(:Debug), do: "Debug"
   def to_string(:Verbose), do: "Verbose"

@@ -63,9 +63,11 @@ defmodule ExSeq do
 
   defp message_parts(message) do
     message = IO.iodata_to_binary(message)
+
     case String.split(message, "\n", parts: 2) do
       [message, exception] ->
         {message, exception}
+
       [message] ->
         {message, nil}
     end

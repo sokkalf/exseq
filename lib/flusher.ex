@@ -17,7 +17,14 @@ defmodule ExSeq.Flusher do
     flush_interval_seconds = Keyword.get(args, :flush_interval_seconds, 5)
     flush_interval = :timer.seconds(flush_interval_seconds)
     batch_size = Keyword.get(args, :batch_size, 50)
-    state = %__MODULE__{url: url, api_key: api_key, flush_interval: flush_interval, batch_size: batch_size}
+
+    state = %__MODULE__{
+      url: url,
+      api_key: api_key,
+      flush_interval: flush_interval,
+      batch_size: batch_size
+    }
+
     tick(state.flush_interval)
     {:ok, state}
   end
@@ -39,11 +46,14 @@ defmodule ExSeq.Flusher do
   @impl true
   def handle_info(:tick, state) do
     state = flush(state)
-    state = if length(state.retry_buffer) > 0 and length(state.messages) == 0 do
-      %{state | messages: state.retry_buffer, retry_buffer: []}
-    else
-      state
-    end
+
+    state =
+      if length(state.retry_buffer) > 0 and length(state.messages) == 0 do
+        %{state | messages: state.retry_buffer, retry_buffer: []}
+      else
+        state
+      end
+
     tick(state.flush_interval)
     {:noreply, state}
   end
