@@ -54,6 +54,16 @@ defmodule ExSeqTest do
       assert_receive {:"$gen_cast", {:receive, %CLEFEvent{level: :Information}}}
     end
 
+    test "accepts both :warn and :warning as the configured level" do
+      for min_level <- [:warn, :warning] do
+        log(:warn, min_level)
+        assert_receive {:"$gen_cast", {:receive, %CLEFEvent{level: :Warning}}}
+
+        log(:info, min_level)
+        refute_receive {:"$gen_cast", _}
+      end
+    end
+
     test "drops events below the configured level" do
       log(:debug, :info)
       refute_receive {:"$gen_cast", _}

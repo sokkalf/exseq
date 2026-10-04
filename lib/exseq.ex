@@ -27,14 +27,7 @@ defmodule ExSeq do
   end
 
   def handle_event({level, _group_leader, {Logger, message, timestamp, metadata}}, state) do
-    level_order = %{
-      debug: 0,
-      info: 1,
-      warn: 2,
-      error: 3
-    }
-
-    if level_order[level] >= level_order[state.level] do
+    if :logger.compare_levels(erlang_level(level), erlang_level(state.level)) != :lt do
       create_event(level, message, timestamp, metadata)
       |> send_event()
     end
@@ -50,6 +43,10 @@ defmodule ExSeq do
   def handle_event(_, state) do
     {:ok, state}
   end
+
+  # Logger.compare_levels/2 would warn about :warn being deprecated.
+  defp erlang_level(:warn), do: :warning
+  defp erlang_level(level), do: level
 
   @impl true
   def handle_info(_, state) do
