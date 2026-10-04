@@ -5,10 +5,10 @@ defmodule ExSeqTest do
 
   @time 1_735_787_045_123_456
 
-  describe "create_event/4" do
+  describe "create_event/3" do
     test "builds an event from a log message" do
       event =
-        ExSeq.create_event(:info, ["hello", ?\s, "world"], nil, time: @time, foo: "bar")
+        ExSeq.create_event(:info, ["hello", ?\s, "world"], time: @time, foo: "bar")
 
       assert %CLEFEvent{
                level: :Information,
@@ -21,12 +21,12 @@ defmodule ExSeqTest do
     end
 
     test "accepts chardata with codepoints above 255" do
-      event = ExSeq.create_event(:info, [~c"blåbær ", 0x1F600, "!"], nil, time: @time)
+      event = ExSeq.create_event(:info, [~c"blåbær ", 0x1F600, "!"], time: @time)
       assert event.message == "blåbær 😀!"
     end
 
     test "keeps multi-line messages whole" do
-      event = ExSeq.create_event(:info, "line one\nline two", nil, time: @time)
+      event = ExSeq.create_event(:info, "line one\nline two", time: @time)
       assert %CLEFEvent{message: "line one\nline two", exception: nil} = event
     end
 
@@ -38,7 +38,7 @@ defmodule ExSeqTest do
             {{{:nocatch, :ball}, stacktrace}, "** (throw) :ball"},
             {{:killed, stacktrace}, "** (exit) killed"}
           ] do
-        event = ExSeq.create_event(:error, "crashed", nil, time: @time, crash_reason: reason)
+        event = ExSeq.create_event(:error, "crashed", time: @time, crash_reason: reason)
 
         assert event.message == "crashed"
         assert event.exception =~ expected
@@ -49,15 +49,15 @@ defmodule ExSeqTest do
 
     test "uses the original level from :erl_level" do
       assert %CLEFEvent{level: :Fatal} =
-               ExSeq.create_event(:error, "hi", nil, time: @time, erl_level: :critical)
+               ExSeq.create_event(:error, "hi", time: @time, erl_level: :critical)
 
       assert %CLEFEvent{level: :Information} =
-               ExSeq.create_event(:info, "hi", nil, time: @time, erl_level: :notice)
+               ExSeq.create_event(:info, "hi", time: @time, erl_level: :notice)
     end
 
     test "removes internal metadata" do
       event =
-        ExSeq.create_event(:info, "hi", nil,
+        ExSeq.create_event(:info, "hi",
           time: @time,
           gl: self(),
           domain: [:elixir],

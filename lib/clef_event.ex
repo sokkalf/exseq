@@ -23,7 +23,7 @@ defmodule ExSeq.CLEFEvent do
   @typedoc """
   CLEF event
 
-  * `timestamp` – a `DateTime` (or `NaiveDateTime`) for the log time.
+  * `timestamp` – a `DateTime` for the log time.
   * `message` – the main log message string.
   * `exception` – an exception stacktrace or error details.
   * `level` – one of the `ExSeq.CLEFLevel` variants.
@@ -36,7 +36,7 @@ defmodule ExSeq.CLEFEvent do
   * `properties` – additional arbitrary key/value pairs.
   """
   @type t :: %__MODULE__{
-          timestamp: DateTime.t() | NaiveDateTime.t() | nil,
+          timestamp: DateTime.t() | nil,
           message: String.t() | nil,
           exception: String.t() | nil,
           level: CLEFLevel.t(),
@@ -115,7 +115,7 @@ defimpl Jason.Encoder, for: ExSeq.CLEFEvent do
 
     # Add user-defined properties into the top-level map:
     props = event.properties |> Enum.into(%{})
-    merged = Map.merge(clef_map, props || %{})
+    merged = Map.merge(clef_map, props)
 
     cleaned =
       merged

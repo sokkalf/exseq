@@ -8,10 +8,6 @@ defmodule ExSeq do
     :level
   ]
 
-  def start_link(_args) do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
-  end
-
   @impl true
   def init(_args) do
     config = Application.get_env(:logger, __MODULE__, [])
@@ -26,9 +22,9 @@ defmodule ExSeq do
     {:ok, state}
   end
 
-  def handle_event({level, _group_leader, {Logger, message, timestamp, metadata}}, state) do
+  def handle_event({level, _group_leader, {Logger, message, _timestamp, metadata}}, state) do
     if :logger.compare_levels(erlang_level(level), erlang_level(state.level)) != :lt do
-      create_event(level, message, timestamp, metadata)
+      create_event(level, message, metadata)
       |> send_event(state.flusher)
     end
 
@@ -80,16 +76,8 @@ defmodule ExSeq do
   defp format_exception(_), do: nil
 
   @doc false
-  def create_event(level, message, timestamp, metadata) do
-    ts =
-      case Keyword.get(metadata, :time) do
-        nil ->
-          {{year, month, day}, {hour, minute, second, millisecond}} = timestamp
-          NaiveDateTime.new!(year, month, day, hour, minute, second, millisecond * 1000)
-
-        t ->
-          DateTime.from_unix!(t, :microsecond)
-      end
+  def create_event(level, message, metadata) do
+    time = Keyword.get_lazy(metadata, :time, &:logger.timestamp/0)
 
     # Logger translates levels for backends (e.g. :critical to :error), but
     # keeps the original in :erl_level.
@@ -104,7 +92,7 @@ defmodule ExSeq do
       |> Keyword.delete(:crash_reason)
 
     %ExSeq.CLEFEvent{
-      timestamp: ts,
+      timestamp: DateTime.from_unix!(time, :microsecond),
       message: IO.chardata_to_string(message),
       exception: exception,
       level: CLEFLevel.elixir_to_clef_level(level),
