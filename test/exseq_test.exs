@@ -21,6 +21,14 @@ defmodule ExSeqTest do
       assert event.properties == [foo: "bar"]
     end
 
+    test "uses the original level from :erl_level" do
+      assert %CLEFEvent{level: :Fatal} =
+               ExSeq.create_event(:error, "hi", nil, time: @time, erl_level: :critical)
+
+      assert %CLEFEvent{level: :Information} =
+               ExSeq.create_event(:info, "hi", nil, time: @time, erl_level: :notice)
+    end
+
     test "removes internal metadata" do
       event =
         ExSeq.create_event(:info, "hi", nil,

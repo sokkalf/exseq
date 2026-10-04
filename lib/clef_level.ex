@@ -25,5 +25,6 @@ defmodule ExSeq.CLEFLevel do
   def elixir_to_clef_level(:warn), do: :Warning
   def elixir_to_clef_level(:warning), do: :Warning
   def elixir_to_clef_level(:error), do: :Error
+  def elixir_to_clef_level(level) when level in [:critical, :alert, :emergency], do: :Fatal
   def elixir_to_clef_level(_), do: :Information
 end

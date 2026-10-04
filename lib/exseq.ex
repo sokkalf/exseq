@@ -82,6 +82,10 @@ defmodule ExSeq do
           DateTime.from_unix!(t, :microsecond)
       end
 
+    # Logger translates levels for backends (e.g. :critical to :error), but
+    # keeps the original in :erl_level.
+    level = Keyword.get(metadata, :erl_level, level)
+
     metadata =
       Keyword.delete(metadata, :time)
       |> Keyword.delete(:erl_level)

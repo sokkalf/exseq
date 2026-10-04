@@ -9,6 +9,10 @@ defmodule ExSeq.CLEFLevelTest do
     assert CLEFLevel.elixir_to_clef_level(:warn) == :Warning
     assert CLEFLevel.elixir_to_clef_level(:warning) == :Warning
     assert CLEFLevel.elixir_to_clef_level(:error) == :Error
+
+    for level <- [:critical, :alert, :emergency] do
+      assert CLEFLevel.elixir_to_clef_level(level) == :Fatal
+    end
   end
 
   test "converts CLEF levels to strings" do
