@@ -17,6 +17,14 @@ defmodule ExSeq.FlusherTest do
     })
   end
 
+  # Waits for the request in flight, if any, to complete.
+  defp await_idle(flusher) do
+    if :sys.get_state(flusher).in_flight do
+      Process.sleep(10)
+      await_idle(flusher)
+    end
+  end
+
   defp event(message), do: %CLEFEvent{level: :Information, message: message}
 
   defp lines(conn) do
@@ -40,7 +48,7 @@ defmodule ExSeq.FlusherTest do
     GenServer.cast(flusher, {:receive, event("two")})
 
     assert_receive {:events, ["one", "two"]}
-    :sys.get_state(flusher)
+    await_idle(flusher)
   end
 
   # Responds with the given statuses in turn, and reports each batch's messages.
@@ -67,13 +75,16 @@ defmodule ExSeq.FlusherTest do
     GenServer.cast(flusher, {:receive, event("two")})
     refute_receive {:events, _}, 100
 
+    await_idle(flusher)
     send(flusher, :tick)
     assert_receive {:events, ["one"]}
     refute_receive {:events, _}, 100
 
+    await_idle(flusher)
     send(flusher, :tick)
     assert_receive {:events, ["one"]}
     assert_receive {:events, ["two"]}
+    await_idle(flusher)
     assert %{count: 0, retrying: false} = :sys.get_state(flusher)
   end
 
@@ -86,10 +97,11 @@ defmodule ExSeq.FlusherTest do
     GenServer.cast(flusher, {:receive, event("two")})
     GenServer.cast(flusher, {:receive, event("three")})
 
+    await_idle(flusher)
     send(flusher, :tick)
     assert_receive {:events, ["two"]}
     assert_receive {:events, ["three"]}
-    :sys.get_state(flusher)
+    await_idle(flusher)
   end
 
   test "drops batches that Seq rejects as invalid", %{bypass: bypass, url: url} do
@@ -98,6 +110,7 @@ defmodule ExSeq.FlusherTest do
 
     GenServer.cast(flusher, {:receive, event("one")})
     assert_receive {:events, ["one"]}
+    await_idle(flusher)
     assert %{count: 0, retrying: false} = :sys.get_state(flusher)
   end
 
@@ -113,9 +126,44 @@ defmodule ExSeq.FlusherTest do
       flusher = start_flusher([seq_url: url, batch_size: 1] ++ opts)
       GenServer.cast(flusher, {:receive, event("one")})
       assert_receive {:api_key, ^expected}
-      :sys.get_state(flusher)
       stop_supervised!(ExSeq.Flusher)
     end
+  end
+
+  test "doesn't block while a request is in flight", %{bypass: bypass, url: url} do
+    test = self()
+
+    Bypass.expect(bypass, "POST", "/ingest/clef", fn conn ->
+      send(test, {:waiting, self()})
+
+      receive do
+        :respond -> Plug.Conn.resp(conn, 201, "")
+      end
+    end)
+
+    flusher = start_flusher(seq_url: url, batch_size: 1)
+    GenServer.cast(flusher, {:receive, event("one")})
+    assert_receive {:waiting, handler}
+
+    # One request at a time; the rest is buffered meanwhile.
+    GenServer.cast(flusher, {:receive, event("two")})
+    assert %{count: 1, in_flight: {_, _}} = :sys.get_state(flusher)
+
+    send(handler, :respond)
+    assert_receive {:waiting, handler}
+    send(handler, :respond)
+    await_idle(flusher)
+  end
+
+  test "gives up on requests that time out" do
+    # Accepts connections but never responds.
+    {:ok, socket} = :gen_tcp.listen(0, active: false)
+    {:ok, port} = :inet.port(socket)
+
+    flusher = start_flusher(seq_url: "http://localhost:#{port}", batch_size: 1, http_timeout: 100)
+    GenServer.cast(flusher, {:receive, event("one")})
+    await_idle(flusher)
+    assert %{count: 1, retrying: true} = :sys.get_state(flusher)
   end
 
   test "flushes everything on request", %{bypass: bypass, url: url} do

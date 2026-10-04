@@ -46,8 +46,8 @@ defmodule ExSeqTest do
     assert {:ok, %ExSeq{flusher: ExSeq.Flusher}} = ExSeq.init(ExSeq)
     assert {:ok, %ExSeq{flusher: ExSeq.Flusher}} = ExSeq.init(ExSeq)
 
-    assert [{ExSeq.Flusher, pid, :worker, _}] = Supervisor.which_children(ExSeq.Supervisor)
-    assert pid == Process.whereis(ExSeq.Flusher)
+    children = Supervisor.which_children(ExSeq.Supervisor)
+    assert {ExSeq.Flusher, Process.whereis(ExSeq.Flusher), :worker, [ExSeq.Flusher]} in children
   end
 
   describe "handle_event/2" do

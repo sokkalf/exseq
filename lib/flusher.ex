@@ -6,10 +6,13 @@ defmodule ExSeq.Flusher do
 
   defstruct buffer: :queue.new(),
             count: 0,
+            in_flight: nil,
             retrying: false,
+            draining: false,
             flush_interval: :timer.seconds(5),
             batch_size: 50,
             max_buffer_size: 10_000,
+            http_timeout: :timer.seconds(5),
             url: "http://localhost:5341/ingest/clef",
             api_key: nil
 
@@ -25,13 +28,15 @@ defmodule ExSeq.Flusher do
     flush_interval = :timer.seconds(args[:flush_interval] || args[:flush_interval_seconds] || 5)
     batch_size = Keyword.get(args, :batch_size, 50)
     max_buffer_size = Keyword.get(args, :max_buffer_size, 10_000)
+    http_timeout = Keyword.get(args, :http_timeout, :timer.seconds(5))
 
     state = %__MODULE__{
       url: url,
       api_key: api_key,
       flush_interval: flush_interval,
       batch_size: batch_size,
-      max_buffer_size: max(max_buffer_size, batch_size)
+      max_buffer_size: max(max_buffer_size, batch_size),
+      http_timeout: http_timeout
     }
 
     Process.flag(:trap_exit, true)
@@ -49,24 +54,26 @@ defmodule ExSeq.Flusher do
     state =
       %{state | buffer: :queue.in(msg, state.buffer), count: state.count + 1}
       |> drop_oldest()
-
-    # While Seq is failing, wait for the next tick instead of retrying on
-    # every event.
-    state =
-      if state.count >= state.batch_size and not state.retrying do
-        flush(state)
-      else
-        state
-      end
+      |> maybe_flush()
 
     {:noreply, state}
   end
 
   @impl true
   def handle_info(:tick, state) do
-    state = flush_all(state)
+    state = maybe_flush(%{state | draining: true})
     tick(state.flush_interval)
     {:noreply, state}
+  end
+
+  def handle_info({ref, result}, %{in_flight: {%Task{ref: ref}, batch}} = state) do
+    Process.demonitor(ref, [:flush])
+    state = handle_result(%{state | in_flight: nil}, batch, result)
+    {:noreply, maybe_flush(state)}
+  end
+
+  def handle_info({:DOWN, ref, :process, _, _}, %{in_flight: {%Task{ref: ref}, batch}} = state) do
+    {:noreply, handle_result(%{state | in_flight: nil}, batch, :retry)}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -77,12 +84,91 @@ defmodule ExSeq.Flusher do
   end
 
   defp drop_oldest(%{count: count, max_buffer_size: max} = state) when count > max do
-    %{state | buffer: :queue.drop(state.buffer), count: count - 1}
+    drop_oldest(%{state | buffer: :queue.drop(state.buffer), count: count - 1})
   end
 
   defp drop_oldest(state), do: state
 
   defp tick(interval), do: Process.send_after(self(), :tick, interval)
+
+  # Sends the next batch from a task, one request at a time. After a tick,
+  # everything buffered is sent; otherwise only full batches, and not while
+  # Seq is failing.
+  defp maybe_flush(%{in_flight: nil, count: count} = state) when count > 0 do
+    if state.draining or (count >= state.batch_size and not state.retrying) do
+      {batch, state} = take_batch(state)
+      config = Map.take(state, [:url, :api_key, :http_timeout])
+      task = Task.Supervisor.async_nolink(ExSeq.TaskSupervisor, fn -> post(batch, config) end)
+      %{state | in_flight: {task, batch}}
+    else
+      state
+    end
+  end
+
+  defp maybe_flush(%{count: 0} = state), do: %{state | draining: false}
+  defp maybe_flush(state), do: state
+
+  # Sends everything synchronously, stopping at the first failure.
+  defp flush_all(state) do
+    state |> await_in_flight() |> flush_sync()
+  end
+
+  defp await_in_flight(%{in_flight: nil} = state), do: state
+
+  defp await_in_flight(%{in_flight: {task, batch}} = state) do
+    result =
+      case Task.yield(task, state.http_timeout * 2) || Task.shutdown(task, :brutal_kill) do
+        {:ok, result} -> result
+        _ -> :retry
+      end
+
+    handle_result(%{state | in_flight: nil}, batch, result)
+  end
+
+  defp flush_sync(%{count: 0} = state), do: state
+
+  defp flush_sync(state) do
+    {batch, state} = take_batch(state)
+    result = post(batch, state)
+    state = handle_result(state, batch, result)
+    if result == :retry, do: state, else: flush_sync(state)
+  end
+
+  defp take_batch(state) do
+    size = min(state.count, state.batch_size)
+    {batch, rest} = :queue.split(size, state.buffer)
+    {batch, %{state | buffer: rest, count: state.count - size}}
+  end
+
+  # A failed batch goes back to the front of the buffer, to be retried on the
+  # next tick.
+  defp handle_result(state, batch, :retry) do
+    buffer = :queue.join(batch, state.buffer)
+    count = state.count + :queue.len(batch)
+    drop_oldest(%{state | buffer: buffer, count: count, retrying: true, draining: false})
+  end
+
+  defp handle_result(state, _batch, _sent_or_dropped), do: %{state | retrying: false}
+
+  defp post(batch, config) do
+    case HTTPoison.post(
+           config.url,
+           messages_as_string_with_newline(:queue.to_list(batch)),
+           headers(config.api_key),
+           timeout: config.http_timeout,
+           recv_timeout: config.http_timeout
+         ) do
+      {:ok, %HTTPoison.Response{status_code: status}} when status in 200..299 ->
+        :ok
+
+      # Seq rejected the payload itself, so retrying won't help.
+      {:ok, %HTTPoison.Response{status_code: status}} when status in [400, 413] ->
+        :drop
+
+      _error ->
+        :retry
+    end
+  end
 
   defp messages_as_string_with_newline(messages) do
     messages
@@ -112,37 +198,6 @@ defmodule ExSeq.Flusher do
     end
   rescue
     _ -> inspect(value)
-  end
-
-  defp flush_all(state) do
-    state = flush(state)
-    if state.count > 0 and not state.retrying, do: flush_all(state), else: state
-  end
-
-  defp flush(%{count: 0} = state), do: state
-
-  # Sends the oldest batch_size events. They stay at the front of the buffer
-  # until Seq accepts them.
-  defp flush(state) do
-    size = min(state.count, state.batch_size)
-    {batch, rest} = :queue.split(size, state.buffer)
-    sent = %{state | buffer: rest, count: state.count - size, retrying: false}
-
-    case HTTPoison.post(
-           state.url,
-           messages_as_string_with_newline(:queue.to_list(batch)),
-           headers(state.api_key)
-         ) do
-      {:ok, %HTTPoison.Response{status_code: status}} when status in 200..299 ->
-        sent
-
-      # Seq rejected the payload itself, so retrying won't help.
-      {:ok, %HTTPoison.Response{status_code: status}} when status in [400, 413] ->
-        sent
-
-      _error ->
-        %{state | retrying: true}
-    end
   end
 
   defp headers(api_key) when api_key in [nil, ""] do

@@ -8,6 +8,7 @@ defmodule ExSeq.Application do
     config = Application.get_env(:logger, ExSeq, [])
 
     children = [
+      {Task.Supervisor, name: ExSeq.TaskSupervisor},
       {ExSeq.Flusher, config}
     ]
 
