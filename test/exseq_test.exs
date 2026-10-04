@@ -5,10 +5,14 @@ defmodule ExSeqTest do
 
   @time 1_735_787_045_123_456
 
-  describe "create_event/3" do
-    test "builds an event from a log message" do
+  defp log_event(level, msg, meta \\ %{}) do
+    %{level: level, msg: msg, meta: Map.merge(%{time: @time, pid: self()}, meta)}
+  end
+
+  describe "create_event/1" do
+    test "builds an event from a log event" do
       event =
-        ExSeq.create_event(:info, ["hello", ?\s, "world"], time: @time, foo: "bar")
+        ExSeq.create_event(log_event(:info, {:string, ["hello", ?\s, "world"]}, %{foo: "bar"}))
 
       assert %CLEFEvent{
                level: :Information,
@@ -17,16 +21,29 @@ defmodule ExSeqTest do
                timestamp: ~U[2025-01-02 03:04:05.123456Z]
              } = event
 
-      assert event.properties == [foo: "bar"]
+      assert event.properties == %{foo: "bar", pid: self()}
+    end
+
+    test "formats reports and format strings" do
+      assert ExSeq.create_event(log_event(:info, {~c"~p and ~s", [:a, "b"]})).message ==
+               ":a and b"
+
+      assert ExSeq.create_event(log_event(:info, {:report, %{a: 1}})).message == "[a: 1]"
+    end
+
+    test "uses the event's level" do
+      for {level, clef_level} <- [warning: :Warning, notice: :Information, critical: :Fatal] do
+        assert ExSeq.create_event(log_event(level, {:string, "hi"})).level == clef_level
+      end
     end
 
     test "accepts chardata with codepoints above 255" do
-      event = ExSeq.create_event(:info, [~c"blåbær ", 0x1F600, "!"], time: @time)
+      event = ExSeq.create_event(log_event(:info, {:string, [~c"blåbær ", 0x1F600, "!"]}))
       assert event.message == "blåbær 😀!"
     end
 
     test "keeps multi-line messages whole" do
-      event = ExSeq.create_event(:info, "line one\nline two", time: @time)
+      event = ExSeq.create_event(log_event(:info, {:string, "line one\nline two"}))
       assert %CLEFEvent{message: "line one\nline two", exception: nil} = event
     end
 
@@ -38,89 +55,90 @@ defmodule ExSeqTest do
             {{{:nocatch, :ball}, stacktrace}, "** (throw) :ball"},
             {{:killed, stacktrace}, "** (exit) killed"}
           ] do
-        event = ExSeq.create_event(:error, "crashed", time: @time, crash_reason: reason)
+        event =
+          ExSeq.create_event(log_event(:error, {:string, "crashed"}, %{crash_reason: reason}))
 
         assert event.message == "crashed"
         assert event.exception =~ expected
         assert event.exception =~ "lib/foo.ex:3: Foo.bar/1"
-        assert event.properties == []
+        refute Map.has_key?(event.properties, :crash_reason)
       end
     end
 
-    test "uses the original level from :erl_level" do
-      assert %CLEFEvent{level: :Fatal} =
-               ExSeq.create_event(:error, "hi", time: @time, erl_level: :critical)
+    test "converts and removes metadata like Elixir's Logger" do
+      meta = %{
+        gl: self(),
+        domain: [:elixir],
+        report_cb: &inspect/1,
+        mfa: {Foo, :bar, 2},
+        file: ~c"lib/foo.ex",
+        line: 3
+      }
 
-      assert %CLEFEvent{level: :Information} =
-               ExSeq.create_event(:info, "hi", time: @time, erl_level: :notice)
-    end
+      event = ExSeq.create_event(log_event(:info, {:string, "hi"}, meta))
 
-    test "removes internal metadata" do
-      event =
-        ExSeq.create_event(:info, "hi",
-          time: @time,
-          gl: self(),
-          domain: [:elixir],
-          erl_level: :info,
-          foo: "bar"
-        )
-
-      assert event.properties == [foo: "bar"]
+      assert event.properties == %{
+               pid: self(),
+               module: Foo,
+               function: "bar/2",
+               file: "lib/foo.ex",
+               line: 3
+             }
     end
   end
 
-  test "can be installed more than once" do
-    assert {:ok, %ExSeq{flusher: ExSeq.Flusher}} = ExSeq.init(ExSeq)
-    assert {:ok, %ExSeq{flusher: ExSeq.Flusher}} = ExSeq.init(ExSeq)
-
-    children = Supervisor.which_children(ExSeq.Supervisor)
-    assert {ExSeq.Flusher, Process.whereis(ExSeq.Flusher), :worker, [ExSeq.Flusher]} in children
-  end
-
-  describe "handle_event/2" do
-    test "flushes the Flusher when Logger is flushed" do
+  describe "handler" do
+    setup do
       bypass = Bypass.open()
-      test = self()
+      id = :"exseq_test_#{System.unique_integer([:positive])}"
+      on_exit(fn -> :logger.remove_handler(id) end)
+      {:ok, bypass: bypass, id: id, url: "http://localhost:#{bypass.port}/ingest/clef"}
+    end
 
-      Bypass.expect_once(bypass, "POST", "/ingest/clef", fn conn ->
-        send(test, :flushed)
+    defp add_handler(id, config) do
+      :logger.add_handler(id, ExSeq, %{config: Map.merge(%{flush_interval: 3600}, config)})
+    end
+
+    test "sends logged events to Seq", %{bypass: bypass, id: id, url: url} do
+      test = self()
+      marker = "#{id}"
+
+      Bypass.expect(bypass, "POST", "/ingest/clef", fn conn ->
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        for line <- String.split(body, "\n"),
+            event = Jason.decode!(line),
+            event["marker"] == marker,
+            do: send(test, {:event, event})
+
         Plug.Conn.resp(conn, 201, "")
       end)
 
-      config = [seq_url: "http://localhost:#{bypass.port}/ingest/clef", flush_interval: 3600]
-      {:ok, flusher} = GenServer.start_link(ExSeq.Flusher, config)
+      assert :ok = add_handler(id, %{seq_url: url})
 
-      GenServer.cast(flusher, {:receive, %CLEFEvent{level: :Information, message: "hi"}})
-      assert {:ok, _} = ExSeq.handle_event(:flush, %ExSeq{flusher: flusher})
-      assert_received :flushed
+      ExUnit.CaptureLog.capture_log(fn ->
+        require Logger
+        Logger.warning("hello", marker: marker, user_id: 123)
+        Logger.flush()
+      end)
+
+      assert_received {:event, %{"@m" => "hello", "@l" => "Warning", "user_id" => 123}}
     end
 
-    defp log(level, min_level) do
-      event = {level, Process.group_leader(), {Logger, "msg", nil, [time: @time]}}
-      ExSeq.handle_event(event, %ExSeq{level: min_level, flusher: self()})
+    test "rejects unknown options", %{id: id} do
+      assert {:error, {:handler_not_added, {:invalid_options, [:url]}}} =
+               add_handler(id, %{url: "http://seq"})
     end
 
-    test "sends events at or above the configured level" do
-      log(:warn, :info)
-      assert_receive {:"$gen_cast", {:receive, %CLEFEvent{level: :Warning}}}
+    test "can be removed and added again", %{id: id, url: url} do
+      assert :ok = add_handler(id, %{seq_url: url})
+      [{flusher, _}] = Registry.lookup(ExSeq.Registry, id)
 
-      log(:info, :info)
-      assert_receive {:"$gen_cast", {:receive, %CLEFEvent{level: :Information}}}
-    end
+      assert :ok = :logger.remove_handler(id)
+      refute Process.alive?(flusher)
 
-    test "accepts both :warn and :warning as the configured level" do
-      for min_level <- [:warn, :warning] do
-        log(:warn, min_level)
-        assert_receive {:"$gen_cast", {:receive, %CLEFEvent{level: :Warning}}}
-
-        log(:info, min_level)
-        refute_receive {:"$gen_cast", _}
-      end
-    end
-
-    test "drops events below the configured level" do
-      log(:debug, :info)
-      refute_receive {:"$gen_cast", _}
+      assert :ok = add_handler(id, %{seq_url: url})
+      assert [{_, _}] = Registry.lookup(ExSeq.Registry, id)
     end
   end
 end

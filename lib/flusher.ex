@@ -16,16 +16,16 @@ defmodule ExSeq.Flusher do
             url: "http://localhost:5341/ingest/clef",
             api_key: nil
 
-  def start_link(config) do
-    GenServer.start_link(__MODULE__, config, name: __MODULE__)
+  def start_link(opts) do
+    {name, config} = Keyword.pop(opts, :name)
+    GenServer.start_link(__MODULE__, config, name: name)
   end
 
   @impl true
   def init(args) do
-    # :url and :flush_interval_seconds are the old, undocumented names.
-    url = args[:seq_url] || args[:url] || "http://localhost:5341/ingest/clef"
+    url = Keyword.get(args, :seq_url, "http://localhost:5341/ingest/clef")
     api_key = Keyword.get(args, :api_key)
-    flush_interval = :timer.seconds(args[:flush_interval] || args[:flush_interval_seconds] || 5)
+    flush_interval = :timer.seconds(Keyword.get(args, :flush_interval, 5))
     batch_size = Keyword.get(args, :batch_size, 50)
     max_buffer_size = Keyword.get(args, :max_buffer_size, 10_000)
     http_timeout = Keyword.get(args, :http_timeout, :timer.seconds(5))

@@ -3,10 +3,10 @@ defmodule ExSeq.CLEFLevelTest do
 
   alias ExSeq.CLEFLevel
 
-  test "maps Elixir levels to CLEF levels" do
+  test "maps Logger levels to CLEF levels" do
     assert CLEFLevel.elixir_to_clef_level(:debug) == :Debug
     assert CLEFLevel.elixir_to_clef_level(:info) == :Information
-    assert CLEFLevel.elixir_to_clef_level(:warn) == :Warning
+    assert CLEFLevel.elixir_to_clef_level(:notice) == :Information
     assert CLEFLevel.elixir_to_clef_level(:warning) == :Warning
     assert CLEFLevel.elixir_to_clef_level(:error) == :Error
 

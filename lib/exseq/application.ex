@@ -5,11 +5,11 @@ defmodule ExSeq.Application do
 
   @impl true
   def start(_type, _args) do
-    config = Application.get_env(:logger, ExSeq, [])
-
+    # Each ExSeq handler gets its own Flusher, registered under the handler id.
     children = [
+      {Registry, keys: :unique, name: ExSeq.Registry},
       {Task.Supervisor, name: ExSeq.TaskSupervisor},
-      {ExSeq.Flusher, config}
+      {DynamicSupervisor, name: ExSeq.FlusherSupervisor}
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: ExSeq.Supervisor)

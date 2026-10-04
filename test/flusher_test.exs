@@ -225,17 +225,6 @@ defmodule ExSeq.FlusherTest do
       assert %{url: "http://seq/ingest/clef", flush_interval: 2000} = :sys.get_state(flusher)
     end
 
-    test "still accepts the old key names" do
-      flusher =
-        start_flusher(
-          url: "http://seq/ingest/clef",
-          flush_interval: nil,
-          flush_interval_seconds: 2
-        )
-
-      assert %{url: "http://seq/ingest/clef", flush_interval: 2000} = :sys.get_state(flusher)
-    end
-
     test "defaults to a local Seq" do
       flusher = start_flusher([])
       assert :sys.get_state(flusher).url == "http://localhost:5341/ingest/clef"
