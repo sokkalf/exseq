@@ -9,6 +9,7 @@ defmodule Exseq.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       package: package(),
       source_url: "https://github.com/sokkalf/exseq",
+      docs: docs(),
       deps: deps()
     ]
   end
@@ -28,6 +29,13 @@ defmodule Exseq.MixProject do
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
+
+  defp docs do
+    [
+      main: "readme",
+      extras: ["README.md", "LICENSE"]
+    ]
+  end
 
   def application do
     [

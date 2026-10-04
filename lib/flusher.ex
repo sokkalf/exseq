@@ -1,4 +1,23 @@
 defmodule ExSeq.Flusher do
+  @moduledoc """
+  Buffers events for an `ExSeq` handler and sends them to Seq in batches.
+
+  A batch is sent once `:batch_size` events are buffered, and everything that's
+  buffered is sent every `:flush_interval` seconds. Requests are made from a
+  task, one at a time, so the Flusher keeps accepting events while waiting on
+  Seq.
+
+  If Seq can't be reached or responds with an error, the batch stays in the
+  buffer and is retried on the next flush. The buffer holds at most
+  `:max_buffer_size` events, dropping the oldest beyond that. Batches that Seq
+  rejects as invalid (HTTP 400 or 413) are dropped.
+
+  Everything buffered is also sent on `Logger.flush/0` and on shutdown.
+
+  Flushers are started by `ExSeq` when a handler is added; there's no need to
+  start one yourself.
+  """
+
   # Leave time to send what's buffered on shutdown.
   use GenServer, shutdown: 10_000
 

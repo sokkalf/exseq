@@ -1,4 +1,36 @@
 defmodule ExSeq do
+  @moduledoc """
+  A `:logger` handler that sends log events to [Seq](https://datalust.co/seq).
+
+  Add it like any other handler, for example in your application's `start/2`:
+
+      :logger.add_handler(:seq, ExSeq, %{
+        level: :info,
+        config: %{seq_url: "http://localhost:5341/ingest/clef", api_key: "..."}
+      })
+
+  or through `Logger.add_handlers/1`, as described in the README.
+
+  ## Options
+
+  These go under the handler's `:config` key:
+
+    * `:seq_url` - the Seq CLEF ingestion endpoint. Defaults to
+      `"http://localhost:5341/ingest/clef"`.
+    * `:api_key` - the Seq API key, if Seq requires one.
+    * `:flush_interval` - seconds between flushes. Defaults to `5`.
+    * `:batch_size` - events are sent as soon as this many are buffered.
+      Defaults to `50`.
+    * `:max_buffer_size` - events kept while Seq can't be reached. The oldest
+      are dropped beyond this. Defaults to `10000`.
+    * `:http_timeout` - connect and receive timeout in milliseconds. Defaults
+      to `5000`.
+
+  Options can be changed at runtime with `:logger.update_handler_config/3`.
+  Each handler has its own `ExSeq.Flusher`, which batches events and sends
+  them to Seq.
+  """
+
   alias ExSeq.CLEFLevel
 
   @options [:seq_url, :api_key, :flush_interval, :batch_size, :max_buffer_size, :http_timeout]
