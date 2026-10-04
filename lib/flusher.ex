@@ -97,6 +97,8 @@ defmodule ExSeq.Flusher do
     _ -> inspect(value)
   end
 
+  defp flush(%{count: 0} = state), do: state
+
   defp flush(state) do
     headers = [
       {"Content-Type", "application/vnd.serilog.clef"},

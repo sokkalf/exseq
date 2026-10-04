@@ -52,6 +52,13 @@ defmodule ExSeq.FlusherTest do
     assert %{messages: [], retry_buffer: [%CLEFEvent{message: "one"}]} = :sys.get_state(flusher)
   end
 
+  test "sends nothing when there's nothing to flush", %{url: url} do
+    # Bypass fails the test on any unexpected request.
+    flusher = start_flusher(seq_url: url)
+    send(flusher, :tick)
+    :sys.get_state(flusher)
+  end
+
   describe "config" do
     test "reads the documented keys" do
       flusher = start_flusher(seq_url: "http://seq/ingest/clef", flush_interval: 2)
