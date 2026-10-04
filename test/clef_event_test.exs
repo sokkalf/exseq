@@ -37,6 +37,20 @@ defmodule ExSeq.CLEFEventTest do
     assert %{"foo" => "bar", "list" => ["a", "b"]} = encode(event)
   end
 
+  test "keeps numbers, booleans and nil" do
+    event = %CLEFEvent{
+      level: :Information,
+      properties: [user_id: 123, ratio: 0.5, admin: false, nested: %{a: nil, b: [1, true]}]
+    }
+
+    assert %{
+             "user_id" => 123,
+             "ratio" => 0.5,
+             "admin" => false,
+             "nested" => %{"a" => nil, "b" => [1, true]}
+           } = encode(event)
+  end
+
   test "converts values JSON can't represent" do
     event = %CLEFEvent{
       level: :Information,

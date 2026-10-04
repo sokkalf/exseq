@@ -79,6 +79,10 @@ defimpl Jason.Encoder, for: ExSeq.CLEFEvent do
     inspect(value)
   end
 
+  defp sanitize_metadata(value) when is_number(value) or is_boolean(value) or is_nil(value) do
+    value
+  end
+
   defp sanitize_metadata(value) when is_atom(value) do
     Atom.to_string(value)
   end
