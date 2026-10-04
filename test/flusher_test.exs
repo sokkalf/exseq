@@ -114,6 +114,28 @@ defmodule ExSeq.FlusherTest do
     assert %{count: 0, retrying: false} = :sys.get_state(flusher)
   end
 
+  test "inspects properties that fail to encode", %{bypass: bypass, url: url} do
+    test = self()
+
+    Bypass.expect_once(bypass, "POST", "/ingest/clef", fn conn ->
+      {events, conn} = lines(conn)
+      send(test, {:events, events})
+      Plug.Conn.resp(conn, 201, "")
+    end)
+
+    flusher = start_flusher(seq_url: url, batch_size: 2)
+    bad = %ExSeq.Test.Derived{value: {:not, :encodable}}
+    good = %CLEFEvent{level: :Information, message: "good"}
+
+    GenServer.cast(flusher, {:receive, %{good | properties: [bad: bad, ok: 1]}})
+    GenServer.cast(flusher, {:receive, good})
+
+    assert_receive {:events, [first, %{"@m" => "good"}]}
+    assert %{"@m" => "good", "bad" => inspected, "ok" => 1} = first
+    assert inspected == inspect(bad)
+    await_idle(flusher)
+  end
+
   test "sends the API key only when one is configured", %{bypass: bypass, url: url} do
     test = self()
 

@@ -6,6 +6,7 @@ defmodule Exseq.MixProject do
       app: :exseq,
       version: "0.1.2",
       elixir: "~> 1.17",
+      elixirc_paths: elixirc_paths(Mix.env()),
       package: package(),
       source_url: "https://github.com/sokkalf/exseq",
       deps: deps()
@@ -24,6 +25,9 @@ defmodule Exseq.MixProject do
       files: ["lib", "mix.exs", "README.md"]
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   def application do
     [

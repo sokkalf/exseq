@@ -57,14 +57,11 @@ defimpl Jason.Encoder, for: ExSeq.CLEFEvent do
     Enum.into(value, %{}, fn {k, v} -> {sanitize_key(k), sanitize_metadata(v)} end)
   end
 
+  # Structs without their own Jason.Encoder implementation can't be encoded.
+  # Ones with an implementation may still fail on their fields; the Flusher
+  # handles that when encoding.
   defp sanitize_metadata(value) when is_struct(value) do
-    # Dirty fallback hack
-    try do
-      Jason.encode!(value)
-      value
-    rescue
-      _ -> inspect(value)
-    end
+    if Jason.Encoder.impl_for(value) == Jason.Encoder.Any, do: inspect(value), else: value
   end
 
   defp sanitize_metadata(value) when is_list(value) do
