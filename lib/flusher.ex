@@ -3,11 +3,12 @@ defmodule ExSeq.Flusher do
 
   alias ExSeq.CLEFEvent
 
-  defstruct messages: [],
+  defstruct buffer: :queue.new(),
             count: 0,
+            retrying: false,
             flush_interval: :timer.seconds(5),
             batch_size: 50,
-            retry_buffer: [],
+            max_buffer_size: 10_000,
             url: "http://localhost:5341/ingest/clef",
             api_key: nil
 
@@ -18,12 +19,14 @@ defmodule ExSeq.Flusher do
     api_key = Keyword.get(args, :api_key)
     flush_interval = :timer.seconds(args[:flush_interval] || args[:flush_interval_seconds] || 5)
     batch_size = Keyword.get(args, :batch_size, 50)
+    max_buffer_size = Keyword.get(args, :max_buffer_size, 10_000)
 
     state = %__MODULE__{
       url: url,
       api_key: api_key,
       flush_interval: flush_interval,
-      batch_size: batch_size
+      batch_size: batch_size,
+      max_buffer_size: max(max_buffer_size, batch_size)
     }
 
     tick(state.flush_interval)
@@ -32,11 +35,14 @@ defmodule ExSeq.Flusher do
 
   @impl true
   def handle_cast({:receive, %CLEFEvent{} = msg}, state) do
-    # Newest first; reversed when sending.
-    state = %{state | messages: [msg | state.messages], count: state.count + 1}
-
     state =
-      if state.count >= state.batch_size do
+      %{state | buffer: :queue.in(msg, state.buffer), count: state.count + 1}
+      |> drop_oldest()
+
+    # While Seq is failing, wait for the next tick instead of retrying on
+    # every event.
+    state =
+      if state.count >= state.batch_size and not state.retrying do
         flush(state)
       else
         state
@@ -47,23 +53,16 @@ defmodule ExSeq.Flusher do
 
   @impl true
   def handle_info(:tick, state) do
-    state = flush(state)
-
-    state =
-      if state.retry_buffer != [] and state.count == 0 do
-        %{
-          state
-          | messages: state.retry_buffer,
-            count: length(state.retry_buffer),
-            retry_buffer: []
-        }
-      else
-        state
-      end
-
+    state = flush_all(state)
     tick(state.flush_interval)
     {:noreply, state}
   end
+
+  defp drop_oldest(%{count: count, max_buffer_size: max} = state) when count > max do
+    %{state | buffer: :queue.drop(state.buffer), count: count - 1}
+  end
+
+  defp drop_oldest(state), do: state
 
   defp tick(interval), do: Process.send_after(self(), :tick, interval)
 
@@ -97,19 +96,34 @@ defmodule ExSeq.Flusher do
     _ -> inspect(value)
   end
 
+  defp flush_all(state) do
+    state = flush(state)
+    if state.count > 0 and not state.retrying, do: flush_all(state), else: state
+  end
+
   defp flush(%{count: 0} = state), do: state
 
+  # Sends the oldest batch_size events. They stay at the front of the buffer
+  # until Seq accepts them.
   defp flush(state) do
+    size = min(state.count, state.batch_size)
+    {batch, rest} = :queue.split(size, state.buffer)
+    sent = %{state | buffer: rest, count: state.count - size, retrying: false}
+
     case HTTPoison.post(
            state.url,
-           messages_as_string_with_newline(Enum.reverse(state.messages)),
+           messages_as_string_with_newline(:queue.to_list(batch)),
            headers(state.api_key)
          ) do
       {:ok, %HTTPoison.Response{status_code: status}} when status in 200..299 ->
-        %{state | messages: [], count: 0}
+        sent
+
+      # Seq rejected the payload itself, so retrying won't help.
+      {:ok, %HTTPoison.Response{status_code: status}} when status in [400, 413] ->
+        sent
 
       _error ->
-        %{state | retry_buffer: state.messages, messages: [], count: 0}
+        %{state | retrying: true}
     end
   end
 

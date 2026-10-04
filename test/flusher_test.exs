@@ -43,13 +43,62 @@ defmodule ExSeq.FlusherTest do
     :sys.get_state(flusher)
   end
 
-  test "keeps a batch for retry when Seq responds with an error", %{bypass: bypass, url: url} do
-    Bypass.expect_once(bypass, "POST", "/ingest/clef", &Plug.Conn.resp(&1, 401, ""))
+  # Responds with the given statuses in turn, and reports each batch's messages.
+  defp respond_with(bypass, statuses) do
+    test = self()
+    {:ok, statuses} = Agent.start_link(fn -> statuses end)
 
+    Bypass.expect(bypass, "POST", "/ingest/clef", fn conn ->
+      {events, conn} = lines(conn)
+      send(test, {:events, Enum.map(events, & &1["@m"])})
+      status = Agent.get_and_update(statuses, fn [status | rest] -> {status, rest} end)
+      Plug.Conn.resp(conn, status, "")
+    end)
+  end
+
+  test "retries failed batches, oldest first, on the next tick", %{bypass: bypass, url: url} do
+    respond_with(bypass, [401, 503, 201, 201])
     flusher = start_flusher(seq_url: url, batch_size: 1)
-    GenServer.cast(flusher, {:receive, event("one")})
 
-    assert %{messages: [], retry_buffer: [%CLEFEvent{message: "one"}]} = :sys.get_state(flusher)
+    GenServer.cast(flusher, {:receive, event("one")})
+    assert_receive {:events, ["one"]}
+
+    # No new attempt until the next tick.
+    GenServer.cast(flusher, {:receive, event("two")})
+    refute_receive {:events, _}, 100
+
+    send(flusher, :tick)
+    assert_receive {:events, ["one"]}
+    refute_receive {:events, _}, 100
+
+    send(flusher, :tick)
+    assert_receive {:events, ["one"]}
+    assert_receive {:events, ["two"]}
+    assert %{count: 0, retrying: false} = :sys.get_state(flusher)
+  end
+
+  test "drops the oldest events when the buffer is full", %{bypass: bypass, url: url} do
+    respond_with(bypass, [503, 201, 201])
+    flusher = start_flusher(seq_url: url, batch_size: 1, max_buffer_size: 2)
+
+    GenServer.cast(flusher, {:receive, event("one")})
+    assert_receive {:events, ["one"]}
+    GenServer.cast(flusher, {:receive, event("two")})
+    GenServer.cast(flusher, {:receive, event("three")})
+
+    send(flusher, :tick)
+    assert_receive {:events, ["two"]}
+    assert_receive {:events, ["three"]}
+    :sys.get_state(flusher)
+  end
+
+  test "drops batches that Seq rejects as invalid", %{bypass: bypass, url: url} do
+    respond_with(bypass, [400])
+    flusher = start_flusher(seq_url: url, batch_size: 1)
+
+    GenServer.cast(flusher, {:receive, event("one")})
+    assert_receive {:events, ["one"]}
+    assert %{count: 0, retrying: false} = :sys.get_state(flusher)
   end
 
   test "sends the API key only when one is configured", %{bypass: bypass, url: url} do
