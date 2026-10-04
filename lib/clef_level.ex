@@ -23,6 +23,7 @@ defmodule ExSeq.CLEFLevel do
   def elixir_to_clef_level(:debug), do: :Debug
   def elixir_to_clef_level(:info), do: :Information
   def elixir_to_clef_level(:warn), do: :Warning
+  def elixir_to_clef_level(:warning), do: :Warning
   def elixir_to_clef_level(:error), do: :Error
   def elixir_to_clef_level(_), do: :Information
 end

@@ -7,6 +7,7 @@ defmodule ExSeq.CLEFLevelTest do
     assert CLEFLevel.elixir_to_clef_level(:debug) == :Debug
     assert CLEFLevel.elixir_to_clef_level(:info) == :Information
     assert CLEFLevel.elixir_to_clef_level(:warn) == :Warning
+    assert CLEFLevel.elixir_to_clef_level(:warning) == :Warning
     assert CLEFLevel.elixir_to_clef_level(:error) == :Error
   end
 
