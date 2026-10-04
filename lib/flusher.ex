@@ -12,6 +12,10 @@ defmodule ExSeq.Flusher do
             url: "http://localhost:5341/ingest/clef",
             api_key: nil
 
+  def start_link(config) do
+    GenServer.start_link(__MODULE__, config, name: __MODULE__)
+  end
+
   @impl true
   def init(args) do
     # :url and :flush_interval_seconds are the old, undocumented names.

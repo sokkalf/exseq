@@ -1,6 +1,5 @@
 defmodule ExSeqTest do
-  # Not async: registers the test process as ExSeq.Flusher.
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias ExSeq.CLEFEvent
 
@@ -43,15 +42,18 @@ defmodule ExSeqTest do
     end
   end
 
-  describe "handle_event/2" do
-    setup do
-      Process.register(self(), ExSeq.Flusher)
-      :ok
-    end
+  test "can be installed more than once" do
+    assert {:ok, %ExSeq{flusher: ExSeq.Flusher}} = ExSeq.init(ExSeq)
+    assert {:ok, %ExSeq{flusher: ExSeq.Flusher}} = ExSeq.init(ExSeq)
 
+    assert [{ExSeq.Flusher, pid, :worker, _}] = Supervisor.which_children(ExSeq.Supervisor)
+    assert pid == Process.whereis(ExSeq.Flusher)
+  end
+
+  describe "handle_event/2" do
     defp log(level, min_level) do
       event = {level, Process.group_leader(), {Logger, "msg", nil, [time: @time]}}
-      ExSeq.handle_event(event, %ExSeq{level: min_level})
+      ExSeq.handle_event(event, %ExSeq{level: min_level, flusher: self()})
     end
 
     test "sends events at or above the configured level" do

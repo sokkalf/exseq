@@ -16,8 +16,8 @@ defmodule ExSeq do
   def init(_args) do
     config = Application.get_env(:logger, __MODULE__, [])
     level = Keyword.get(config, :level, :info)
-    {:ok, flusher} = GenServer.start_link(ExSeq.Flusher, config, name: ExSeq.Flusher)
-    {:ok, %__MODULE__{flusher: flusher, level: level}}
+    # The Flusher runs under ExSeq.Supervisor rather than linked to Logger.
+    {:ok, %__MODULE__{flusher: ExSeq.Flusher, level: level}}
   end
 
   @impl true
@@ -29,7 +29,7 @@ defmodule ExSeq do
   def handle_event({level, _group_leader, {Logger, message, timestamp, metadata}}, state) do
     if :logger.compare_levels(erlang_level(level), erlang_level(state.level)) != :lt do
       create_event(level, message, timestamp, metadata)
-      |> send_event()
+      |> send_event(state.flusher)
     end
 
     {:ok, state}
@@ -103,7 +103,7 @@ defmodule ExSeq do
     }
   end
 
-  defp send_event(clef_event) do
-    GenServer.cast(ExSeq.Flusher, {:receive, clef_event})
+  defp send_event(clef_event, flusher) do
+    GenServer.cast(flusher, {:receive, clef_event})
   end
 end
