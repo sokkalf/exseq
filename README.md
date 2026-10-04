@@ -65,7 +65,7 @@ After adding `ExSeq` to your logger backends and setting your `:level`, just log
 ```elixir
 Logger.debug("This is a debug log")  # Will be filtered out if :level >= :info
 Logger.info("An info-level message")
-Logger.warn("A warning")
+Logger.warning("A warning")
 Logger.error("An error occurred!")
 ```
 
