@@ -52,6 +52,23 @@ defmodule ExSeq.FlusherTest do
     assert %{messages: [], retry_buffer: [%CLEFEvent{message: "one"}]} = :sys.get_state(flusher)
   end
 
+  test "sends the API key only when one is configured", %{bypass: bypass, url: url} do
+    test = self()
+
+    Bypass.expect(bypass, "POST", "/ingest/clef", fn conn ->
+      send(test, {:api_key, Plug.Conn.get_req_header(conn, "x-seq-apikey")})
+      Plug.Conn.resp(conn, 201, "")
+    end)
+
+    for {opts, expected} <- [{[], []}, {[api_key: ""], []}, {[api_key: "secret"], ["secret"]}] do
+      flusher = start_flusher([seq_url: url, batch_size: 1] ++ opts)
+      GenServer.cast(flusher, {:receive, event("one")})
+      assert_receive {:api_key, ^expected}
+      :sys.get_state(flusher)
+      stop_supervised!(ExSeq.Flusher)
+    end
+  end
+
   test "sends nothing when there's nothing to flush", %{url: url} do
     # Bypass fails the test on any unexpected request.
     flusher = start_flusher(seq_url: url)

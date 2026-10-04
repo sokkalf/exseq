@@ -9,13 +9,13 @@ defmodule ExSeq.Flusher do
             batch_size: 50,
             retry_buffer: [],
             url: "http://localhost:5341/ingest/clef",
-            api_key: ""
+            api_key: nil
 
   @impl true
   def init(args) do
     # :url and :flush_interval_seconds are the old, undocumented names.
     url = args[:seq_url] || args[:url] || "http://localhost:5341/ingest/clef"
-    api_key = Keyword.get(args, :api_key, "")
+    api_key = Keyword.get(args, :api_key)
     flush_interval = :timer.seconds(args[:flush_interval] || args[:flush_interval_seconds] || 5)
     batch_size = Keyword.get(args, :batch_size, 50)
 
@@ -100,15 +100,10 @@ defmodule ExSeq.Flusher do
   defp flush(%{count: 0} = state), do: state
 
   defp flush(state) do
-    headers = [
-      {"Content-Type", "application/vnd.serilog.clef"},
-      {"X-Seq-ApiKey", state.api_key}
-    ]
-
     case HTTPoison.post(
            state.url,
            messages_as_string_with_newline(Enum.reverse(state.messages)),
-           headers
+           headers(state.api_key)
          ) do
       {:ok, %HTTPoison.Response{status_code: status}} when status in 200..299 ->
         %{state | messages: [], count: 0}
@@ -117,4 +112,10 @@ defmodule ExSeq.Flusher do
         %{state | retry_buffer: state.messages, messages: [], count: 0}
     end
   end
+
+  defp headers(api_key) when api_key in [nil, ""] do
+    [{"Content-Type", "application/vnd.serilog.clef"}]
+  end
+
+  defp headers(api_key), do: [{"X-Seq-ApiKey", api_key} | headers(nil)]
 end
