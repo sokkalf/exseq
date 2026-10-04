@@ -105,7 +105,7 @@ defmodule ExSeq do
 
     %ExSeq.CLEFEvent{
       timestamp: ts,
-      message: IO.iodata_to_binary(message),
+      message: IO.chardata_to_string(message),
       exception: exception,
       level: CLEFLevel.elixir_to_clef_level(level),
       properties: metadata

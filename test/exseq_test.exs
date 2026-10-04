@@ -20,6 +20,11 @@ defmodule ExSeqTest do
       assert event.properties == [foo: "bar"]
     end
 
+    test "accepts chardata with codepoints above 255" do
+      event = ExSeq.create_event(:info, [~c"blåbær ", 0x1F600, "!"], nil, time: @time)
+      assert event.message == "blåbær 😀!"
+    end
+
     test "keeps multi-line messages whole" do
       event = ExSeq.create_event(:info, "line one\nline two", nil, time: @time)
       assert %CLEFEvent{message: "line one\nline two", exception: nil} = event
