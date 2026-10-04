@@ -20,6 +20,28 @@ defmodule ExSeqTest do
       assert event.properties == [foo: "bar"]
     end
 
+    test "keeps multi-line messages whole" do
+      event = ExSeq.create_event(:info, "line one\nline two", nil, time: @time)
+      assert %CLEFEvent{message: "line one\nline two", exception: nil} = event
+    end
+
+    test "formats the exception from :crash_reason" do
+      stacktrace = [{Foo, :bar, 1, [file: ~c"lib/foo.ex", line: 3]}]
+
+      for {reason, expected} <- [
+            {{%RuntimeError{message: "boom"}, stacktrace}, "** (RuntimeError) boom"},
+            {{{:nocatch, :ball}, stacktrace}, "** (throw) :ball"},
+            {{:killed, stacktrace}, "** (exit) killed"}
+          ] do
+        event = ExSeq.create_event(:error, "crashed", nil, time: @time, crash_reason: reason)
+
+        assert event.message == "crashed"
+        assert event.exception =~ expected
+        assert event.exception =~ "lib/foo.ex:3: Foo.bar/1"
+        assert event.properties == []
+      end
+    end
+
     test "uses the original level from :erl_level" do
       assert %CLEFEvent{level: :Fatal} =
                ExSeq.create_event(:error, "hi", nil, time: @time, erl_level: :critical)

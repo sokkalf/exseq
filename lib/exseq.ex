@@ -64,17 +64,20 @@ defmodule ExSeq do
     {:ok, :ok, state}
   end
 
-  defp message_parts(message) do
-    message = IO.iodata_to_binary(message)
-
-    case String.split(message, "\n", parts: 2) do
-      [message, exception] ->
-        {message, exception}
-
-      [message] ->
-        {message, nil}
-    end
+  # Elixir puts the reason and stacktrace of crashes in :crash_reason.
+  defp format_exception({{:nocatch, value}, stacktrace}) do
+    Exception.format(:throw, value, stacktrace)
   end
+
+  defp format_exception({exception, stacktrace}) when is_exception(exception) do
+    Exception.format(:error, exception, stacktrace)
+  end
+
+  defp format_exception({reason, stacktrace}) when is_list(stacktrace) do
+    Exception.format(:exit, reason, stacktrace)
+  end
+
+  defp format_exception(_), do: nil
 
   @doc false
   def create_event(level, message, timestamp, metadata) do
@@ -91,18 +94,18 @@ defmodule ExSeq do
     # Logger translates levels for backends (e.g. :critical to :error), but
     # keeps the original in :erl_level.
     level = Keyword.get(metadata, :erl_level, level)
+    exception = format_exception(metadata[:crash_reason])
 
     metadata =
       Keyword.delete(metadata, :time)
       |> Keyword.delete(:erl_level)
       |> Keyword.delete(:gl)
       |> Keyword.delete(:domain)
-
-    {message, exception} = message_parts(message)
+      |> Keyword.delete(:crash_reason)
 
     %ExSeq.CLEFEvent{
       timestamp: ts,
-      message: message,
+      message: IO.iodata_to_binary(message),
       exception: exception,
       level: CLEFLevel.elixir_to_clef_level(level),
       properties: metadata
