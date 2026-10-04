@@ -55,7 +55,7 @@ config :logger, ExSeq,
 ## How It Works
 
 1. **`ExSeq`** implements the `:gen_event` behavior, which the Elixir `Logger` uses for backends.
-2. When a log event arrives, `ExSeq` checks if its level is >= the configured minimum. If so, it converts the event to a [CLEFEvent](./lib/ex_seq/clef_event.ex) struct.
+2. When a log event arrives, `ExSeq` checks if its level is >= the configured minimum. If so, it converts the event to a [CLEFEvent](./lib/clef_event.ex) struct.
 3. The event is then sent asynchronously to the `ExSeq.Flusher` GenServer for batching and sending to Seq.
 
 ## Usage
