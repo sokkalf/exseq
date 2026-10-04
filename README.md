@@ -89,9 +89,18 @@ You can then start your application (e.g. via `iex -S mix`) and see the logs in 
 
 ## Notes
 
-- `ExSeq` uses a custom minimal `:gen_server` (the `Flusher`) to batch events and send them in the background.
-- Timestamps are pulled from the Elixir logger metadata if present, or from the default Erlang timestamp.
-- The log level is converted from Elixir’s levels (`:debug`, `:info`, `:warn`, `:error`) to CLEF’s equivalent (`Debug`, `Information`, `Warning`, `Error`) via `CLEFLevel.elixir_to_clef_level/1`.
+- Events are buffered by `ExSeq.Flusher`, a GenServer running under ExSeq's own supervisor, and sent to Seq in batches from a separate task. If Seq can't be reached, they're kept (up to `max_buffer_size`) and retried on the next flush. Buffered events are also sent on shutdown and on `Logger.flush/0`.
+- Timestamps come from the Logger `:time` metadata and are sent in UTC.
+- Log levels map to CLEF levels as follows:
+
+  | Logger                              | CLEF          |
+  | ----------------------------------- | ------------- |
+  | `:debug`                            | `Debug`       |
+  | `:info`, `:notice`                  | `Information` |
+  | `:warning`                          | `Warning`     |
+  | `:error`                            | `Error`       |
+  | `:critical`, `:alert`, `:emergency` | `Fatal`       |
+- Crash reasons (the `:crash_reason` metadata) are sent as the event's exception. All other metadata is sent as event properties.
 
 ## Contributing
 
