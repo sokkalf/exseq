@@ -35,8 +35,14 @@ defmodule ExSeq do
     {:ok, state}
   end
 
+  # Sent by Logger.flush/0.
   def handle_event(:flush, state) do
-    IO.puts("Flush event")
+    try do
+      GenServer.call(state.flusher, :flush, :timer.seconds(30))
+    catch
+      :exit, _ -> :ok
+    end
+
     {:ok, state}
   end
 

@@ -118,6 +118,30 @@ defmodule ExSeq.FlusherTest do
     end
   end
 
+  test "flushes everything on request", %{bypass: bypass, url: url} do
+    respond_with(bypass, [201, 201])
+    flusher = start_flusher(seq_url: url, batch_size: 2)
+
+    for message <- ["one", "two", "three"],
+        do: GenServer.cast(flusher, {:receive, event(message)})
+
+    assert_receive {:events, ["one", "two"]}
+
+    assert GenServer.call(flusher, :flush) == :ok
+    assert_received {:events, ["three"]}
+  end
+
+  test "flushes on shutdown", %{bypass: bypass, url: url} do
+    respond_with(bypass, [201])
+    flusher = start_flusher(seq_url: url)
+
+    GenServer.cast(flusher, {:receive, event("one")})
+    stop_supervised!(ExSeq.Flusher)
+
+    refute Process.alive?(flusher)
+    assert_received {:events, ["one"]}
+  end
+
   test "sends nothing when there's nothing to flush", %{url: url} do
     # Bypass fails the test on any unexpected request.
     flusher = start_flusher(seq_url: url)

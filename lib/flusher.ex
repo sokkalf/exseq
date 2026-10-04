@@ -1,5 +1,6 @@
 defmodule ExSeq.Flusher do
-  use GenServer
+  # Leave time to send what's buffered on shutdown.
+  use GenServer, shutdown: 10_000
 
   alias ExSeq.CLEFEvent
 
@@ -33,8 +34,14 @@ defmodule ExSeq.Flusher do
       max_buffer_size: max(max_buffer_size, batch_size)
     }
 
+    Process.flag(:trap_exit, true)
     tick(state.flush_interval)
     {:ok, state}
+  end
+
+  @impl true
+  def handle_call(:flush, _from, state) do
+    {:reply, :ok, flush_all(state)}
   end
 
   @impl true
@@ -60,6 +67,13 @@ defmodule ExSeq.Flusher do
     state = flush_all(state)
     tick(state.flush_interval)
     {:noreply, state}
+  end
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
+  @impl true
+  def terminate(_reason, state) do
+    flush_all(state)
   end
 
   defp drop_oldest(%{count: count, max_buffer_size: max} = state) when count > max do

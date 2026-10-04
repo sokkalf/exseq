@@ -51,6 +51,23 @@ defmodule ExSeqTest do
   end
 
   describe "handle_event/2" do
+    test "flushes the Flusher when Logger is flushed" do
+      bypass = Bypass.open()
+      test = self()
+
+      Bypass.expect_once(bypass, "POST", "/ingest/clef", fn conn ->
+        send(test, :flushed)
+        Plug.Conn.resp(conn, 201, "")
+      end)
+
+      config = [seq_url: "http://localhost:#{bypass.port}/ingest/clef", flush_interval: 3600]
+      {:ok, flusher} = GenServer.start_link(ExSeq.Flusher, config)
+
+      GenServer.cast(flusher, {:receive, %CLEFEvent{level: :Information, message: "hi"}})
+      assert {:ok, _} = ExSeq.handle_event(:flush, %ExSeq{flusher: flusher})
+      assert_received :flushed
+    end
+
     defp log(level, min_level) do
       event = {level, Process.group_leader(), {Logger, "msg", nil, [time: @time]}}
       ExSeq.handle_event(event, %ExSeq{level: min_level, flusher: self()})
