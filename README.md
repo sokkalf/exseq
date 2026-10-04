@@ -39,7 +39,7 @@ config :logger,
 config :logger, ExSeq,
   level: :info,
   seq_url: "http://localhost:5341/ingest/clef",
-  api_key: "YOUR_SEQ_API_KEY",
+  api_key: "YOUR_SEQ_API_KEY"
 ```
 
 - **`level`** sets the minimum level for sending to Seq. Levels below this are ignored.
