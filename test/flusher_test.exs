@@ -9,7 +9,7 @@ defmodule ExSeq.FlusherTest do
   end
 
   defp start_flusher(opts) do
-    opts = Keyword.merge([flush_interval_seconds: 3600], opts)
+    opts = Keyword.merge([flush_interval: 3600], opts)
 
     start_supervised!(%{
       id: ExSeq.Flusher,
@@ -34,7 +34,7 @@ defmodule ExSeq.FlusherTest do
       Plug.Conn.resp(conn, 201, "")
     end)
 
-    flusher = start_flusher(url: url, batch_size: 2)
+    flusher = start_flusher(seq_url: url, batch_size: 2)
     GenServer.cast(flusher, {:receive, event("one")})
     refute_receive {:events, _}, 100
     GenServer.cast(flusher, {:receive, event("two")})
@@ -42,5 +42,28 @@ defmodule ExSeq.FlusherTest do
     assert_receive {:events, messages}
     assert Enum.sort(messages) == ["one", "two"]
     :sys.get_state(flusher)
+  end
+
+  describe "config" do
+    test "reads the documented keys" do
+      flusher = start_flusher(seq_url: "http://seq/ingest/clef", flush_interval: 2)
+      assert %{url: "http://seq/ingest/clef", flush_interval: 2000} = :sys.get_state(flusher)
+    end
+
+    test "still accepts the old key names" do
+      flusher =
+        start_flusher(
+          url: "http://seq/ingest/clef",
+          flush_interval: nil,
+          flush_interval_seconds: 2
+        )
+
+      assert %{url: "http://seq/ingest/clef", flush_interval: 2000} = :sys.get_state(flusher)
+    end
+
+    test "defaults to a local Seq" do
+      flusher = start_flusher([])
+      assert :sys.get_state(flusher).url == "http://localhost:5341/ingest/clef"
+    end
   end
 end

@@ -12,10 +12,10 @@ defmodule ExSeq.Flusher do
 
   @impl true
   def init(args) do
-    url = Keyword.get(args, :url, "http://localhost:5341/ingeest/clef")
+    # :url and :flush_interval_seconds are the old, undocumented names.
+    url = args[:seq_url] || args[:url] || "http://localhost:5341/ingest/clef"
     api_key = Keyword.get(args, :api_key, "")
-    flush_interval_seconds = Keyword.get(args, :flush_interval_seconds, 5)
-    flush_interval = :timer.seconds(flush_interval_seconds)
+    flush_interval = :timer.seconds(args[:flush_interval] || args[:flush_interval_seconds] || 5)
     batch_size = Keyword.get(args, :batch_size, 50)
 
     state = %__MODULE__{
