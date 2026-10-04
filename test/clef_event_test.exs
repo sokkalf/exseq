@@ -71,6 +71,29 @@ defmodule ExSeq.CLEFEventTest do
     assert encoded["nested"] == %{"tuple" => "{:b, 2}"}
   end
 
+  test "converts invalid UTF-8, improper lists and bad keys" do
+    event = %CLEFEvent{
+      level: :Information,
+      message: <<"bad ", 255>>,
+      properties: [
+        binary: <<255>>,
+        improper: [1 | 2],
+        map: %{{:a, 1} => "tuple key", <<255>> => "binary key", 1 => "number key"}
+      ]
+    }
+
+    encoded = encode(event)
+    assert encoded["@m"] == inspect(<<"bad ", 255>>)
+    assert encoded["binary"] == "<<255>>"
+    assert encoded["improper"] == "[1 | 2]"
+
+    assert encoded["map"] == %{
+             "{:a, 1}" => "tuple key",
+             "<<255>>" => "binary key",
+             "1" => "number key"
+           }
+  end
+
   test "keeps structs that implement Jason.Encoder" do
     event = %CLEFEvent{level: :Information, properties: [date: ~D[2025-01-02]]}
 

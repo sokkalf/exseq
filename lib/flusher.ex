@@ -61,8 +61,33 @@ defmodule ExSeq.Flusher do
   defp tick(interval), do: Process.send_after(self(), :tick, interval)
 
   defp messages_as_string_with_newline(messages) do
-    Enum.map(messages, &Jason.encode!(&1))
+    messages
+    |> Enum.flat_map(&encode_event/1)
     |> Enum.join("\n")
+  end
+
+  # Encode events one at a time, so a bad event can't take the batch down with
+  # it. If encoding fails, retry with the offending properties inspected, and
+  # drop the event if that fails too.
+  defp encode_event(event) do
+    [Jason.encode!(event)]
+  rescue
+    _ ->
+      try do
+        properties = Enum.map(event.properties, fn {k, v} -> {k, encodable(v)} end)
+        [Jason.encode!(%{event | properties: properties})]
+      rescue
+        _ -> []
+      end
+  end
+
+  defp encodable(value) do
+    case Jason.encode(value) do
+      {:ok, _} -> value
+      {:error, _} -> inspect(value)
+    end
+  rescue
+    _ -> inspect(value)
   end
 
   defp flush(state) do

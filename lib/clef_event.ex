@@ -54,7 +54,7 @@ defimpl Jason.Encoder, for: ExSeq.CLEFEvent do
   alias ExSeq.CLEFLevel
 
   defp sanitize_metadata(value) when is_map(value) and not is_struct(value) do
-    Enum.into(value, %{}, fn {k, v} -> {k, sanitize_metadata(v)} end)
+    Enum.into(value, %{}, fn {k, v} -> {sanitize_key(k), sanitize_metadata(v)} end)
   end
 
   defp sanitize_metadata(value) when is_struct(value) do
@@ -68,7 +68,11 @@ defimpl Jason.Encoder, for: ExSeq.CLEFEvent do
   end
 
   defp sanitize_metadata(value) when is_list(value) do
-    Enum.map(value, &sanitize_metadata/1)
+    if List.improper?(value) do
+      inspect(value)
+    else
+      Enum.map(value, &sanitize_metadata/1)
+    end
   end
 
   defp sanitize_metadata(value) when is_tuple(value) do
@@ -87,8 +91,15 @@ defimpl Jason.Encoder, for: ExSeq.CLEFEvent do
     Atom.to_string(value)
   end
 
-  defp sanitize_metadata(value) when is_binary(value), do: value
+  defp sanitize_metadata(value) when is_binary(value) do
+    if String.valid?(value), do: value, else: inspect(value)
+  end
+
   defp sanitize_metadata(value), do: inspect(value)
+
+  defp sanitize_key(key) when is_atom(key), do: key
+  defp sanitize_key(key) when is_binary(key), do: sanitize_metadata(key)
+  defp sanitize_key(key), do: inspect(key)
 
   def encode(%ExSeq.CLEFEvent{} = event, opts) do
     # Transform the struct into a map with the CLEF fields:
