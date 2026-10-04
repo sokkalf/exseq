@@ -35,7 +35,8 @@ defmodule Exseq.MixProject do
     [
       {:jason, "~> 1.4"},
       {:httpoison, "~> 2.2"},
-      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
+      {:bypass, "~> 2.1", only: :test}
     ]
   end
 end

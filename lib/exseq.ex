@@ -73,7 +73,8 @@ defmodule ExSeq do
     end
   end
 
-  defp create_event(level, message, timestamp, metadata) do
+  @doc false
+  def create_event(level, message, timestamp, metadata) do
     ts =
       case Keyword.get(metadata, :time) do
         nil ->

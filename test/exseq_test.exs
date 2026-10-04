@@ -1,8 +1,62 @@
-defmodule ExseqTest do
+defmodule ExSeqTest do
+  # Not async: registers the test process as ExSeq.Flusher.
   use ExUnit.Case
-  doctest Exseq
 
-  test "greets the world" do
-    assert Exseq.hello() == :world
+  alias ExSeq.CLEFEvent
+
+  @time 1_735_787_045_123_456
+
+  describe "create_event/4" do
+    test "builds an event from a log message" do
+      event =
+        ExSeq.create_event(:info, ["hello", ?\s, "world"], nil, time: @time, foo: "bar")
+
+      assert %CLEFEvent{
+               level: :Information,
+               message: "hello world",
+               exception: nil,
+               timestamp: ~U[2025-01-02 03:04:05.123456Z]
+             } = event
+
+      assert event.properties == [foo: "bar"]
+    end
+
+    test "removes internal metadata" do
+      event =
+        ExSeq.create_event(:info, "hi", nil,
+          time: @time,
+          gl: self(),
+          domain: [:elixir],
+          erl_level: :info,
+          foo: "bar"
+        )
+
+      assert event.properties == [foo: "bar"]
+    end
+  end
+
+  describe "handle_event/2" do
+    setup do
+      Process.register(self(), ExSeq.Flusher)
+      :ok
+    end
+
+    defp log(level, min_level) do
+      event = {level, Process.group_leader(), {Logger, "msg", nil, [time: @time]}}
+      ExSeq.handle_event(event, %ExSeq{level: min_level})
+    end
+
+    test "sends events at or above the configured level" do
+      log(:warn, :info)
+      assert_receive {:"$gen_cast", {:receive, %CLEFEvent{level: :Warning}}}
+
+      log(:info, :info)
+      assert_receive {:"$gen_cast", {:receive, %CLEFEvent{level: :Information}}}
+    end
+
+    test "drops events below the configured level" do
+      log(:debug, :info)
+      refute_receive {:"$gen_cast", _}
+    end
   end
 end
