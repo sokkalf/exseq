@@ -4,6 +4,7 @@ defmodule ExSeq.Flusher do
   alias ExSeq.CLEFEvent
 
   defstruct messages: [],
+            count: 0,
             flush_interval: :timer.seconds(5),
             batch_size: 50,
             retry_buffer: [],
@@ -32,10 +33,10 @@ defmodule ExSeq.Flusher do
   @impl true
   def handle_cast({:receive, %CLEFEvent{} = msg}, state) do
     # Newest first; reversed when sending.
-    state = %{state | messages: [msg | state.messages]}
+    state = %{state | messages: [msg | state.messages], count: state.count + 1}
 
     state =
-      if length(state.messages) >= state.batch_size do
+      if state.count >= state.batch_size do
         flush(state)
       else
         state
@@ -49,8 +50,13 @@ defmodule ExSeq.Flusher do
     state = flush(state)
 
     state =
-      if length(state.retry_buffer) > 0 and length(state.messages) == 0 do
-        %{state | messages: state.retry_buffer, retry_buffer: []}
+      if state.retry_buffer != [] and state.count == 0 do
+        %{
+          state
+          | messages: state.retry_buffer,
+            count: length(state.retry_buffer),
+            retry_buffer: []
+        }
       else
         state
       end
@@ -103,10 +109,10 @@ defmodule ExSeq.Flusher do
            headers
          ) do
       {:ok, %HTTPoison.Response{status_code: status}} when status in 200..299 ->
-        %{state | messages: []}
+        %{state | messages: [], count: 0}
 
       _error ->
-        %{state | retry_buffer: state.messages, messages: []}
+        %{state | retry_buffer: state.messages, messages: [], count: 0}
     end
   end
 end
