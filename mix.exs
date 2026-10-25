@@ -47,7 +47,7 @@ defmodule Exseq.MixProject do
   defp deps do
     [
       {:jason, "~> 1.4"},
-      {:httpoison, "~> 2.2"},
+      {:httpoison, "~> 3.0"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:bypass, "~> 2.1", only: :test}
     ]
