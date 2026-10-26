@@ -16,7 +16,7 @@ Add `exseq` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:exseq, "~> 0.1.2"}
+    {:exseq, "~> 0.2.1"}
   ]
 end
 ```
